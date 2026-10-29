@@ -1,0 +1,1387 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Views 쉐도잉</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap">
+<style>
+/* Layout: a practice desk. Video, teleprompter and controls on the left; the sentence ledger on the right. Stacks under 960px. */
+:root {
+  --bg: #EDF1EE;
+  --surface: #FFFFFF;
+  --sunken: #E3E9E5;
+  --line: #D2DAD5;
+  --ink: #16201B;
+  --muted: #5A6961;
+  --accent: #0E6A54;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #D6EBE2;
+  --star: #A5680F;
+  --rec: #BF3A2B;
+  --warn-soft: #F7E2DD;
+  --font-ui: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-read: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1513; --surface: #161E1A; --sunken: #1D2722; --line: #2A3631; --ink: #E3EAE6; --muted: #93A39A;
+    --accent: #4CBF9C; --accent-ink: #0B1F18; --accent-soft: #183A2F; --star: #E2A646; --rec: #EF6B5A; --warn-soft: #3A201C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1513; --surface: #161E1A; --sunken: #1D2722; --line: #2A3631; --ink: #E3EAE6; --muted: #93A39A;
+  --accent: #4CBF9C; --accent-ink: #0B1F18; --accent-soft: #183A2F; --star: #E2A646; --rec: #EF6B5A; --warn-soft: #3A201C;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-ui); }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+svg { flex: none; }
+
+/* header */
+.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px 20px; flex-wrap: wrap;
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.brand { min-width: 0; }
+.brand h1 { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
+.video-title { margin: 0; color: var(--muted); font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70ch; }
+.top-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.stats { font: .8rem/1.2 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.banner {
+  margin: 0; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--warn-soft); border-bottom: 1px solid var(--line); font-size: .9rem;
+}
+
+/* desk */
+.desk {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px;
+  width: 100%; max-width: 1480px; margin: 0 auto;
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) 20px max(16px, env(safe-area-inset-left, 0px));
+}
+.stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (min-width: 960px) {
+  body { display: flex; flex-direction: column; height: 100dvh; }
+  .desk { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  .stage { overflow: auto; min-height: 0; padding-right: 4px; }
+  .ledger { min-height: 0; }
+}
+@media (max-width: 959px) {
+  .desk { grid-template-columns: minmax(0, 1fr); }
+  .ledger-body { max-height: 70vh; }
+  .desk.no-script .ledger { order: -1; }
+}
+
+/* video */
+.video { position: relative; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: var(--radius); overflow: hidden; flex: none; }
+#player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.video-msg { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: #fff; background: rgba(0,0,0,.78); font-size: .95rem; }
+.focus-note { margin: -6px 0 0; font-size: .8rem; color: var(--muted); }
+
+/* teleprompter */
+.prompter { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 20px 16px; display: grid; gap: 8px; }
+.p-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font: 500 .76rem/1.3 var(--font-mono); color: var(--muted); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.p-side { margin: 0; color: var(--muted); font: 400 .95rem/1.4 var(--font-read); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
+.p-current { margin: 0; font: 400 clamp(1.2rem, .95rem + 1vw, 1.65rem)/1.45 var(--font-read); min-height: 2.9em; text-wrap: pretty; overflow-wrap: anywhere; }
+.p-current.placeholder { color: var(--muted); font-size: 1.05rem; font-family: var(--font-ui); }
+.prog { height: 2px; background: var(--sunken); border-radius: 1px; overflow: hidden; }
+.prog span { display: block; height: 100%; width: 0; background: var(--accent); }
+.cue { display: grid; gap: 6px; font-size: .85rem; color: var(--accent); font-weight: 500; }
+.cue-bar { height: 6px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
+.cue-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left center; }
+.p-current, .p-side, .row-text { transition: filter .2s; }
+.is-blind .p-current:not(.revealed), .is-blind .p-side, .is-blind .row-text { filter: blur(7px); user-select: none; }
+.is-blind .p-current:not(.revealed) { cursor: pointer; }
+.blind-hint { display: none; margin: 0; font-size: .78rem; color: var(--muted); }
+.is-blind .blind-hint { display: block; }
+
+/* controls */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.controls { padding: 2px 16px; }
+.ctl-row { display: grid; grid-template-columns: 6.8em minmax(0, 1fr); gap: 6px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.ctl-row:first-child { border-top: 0; }
+.ctl-label { font-size: .78rem; color: var(--muted); letter-spacing: .03em; }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+body[data-mode="flow"] .only-sentence, body[data-mode="sentence"] .only-flow { display: none; }
+@media (max-width: 520px) { .ctl-row { grid-template-columns: minmax(0, 1fr); } }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; line-height: 1.2;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn svg { width: 16px; height: 16px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.btn.primary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.08); }
+.btn.icon { padding: 7px 9px; }
+.star-btn svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; }
+.star-btn[aria-pressed="true"] { color: var(--star); border-color: var(--star); }
+.star-btn[aria-pressed="true"] svg { fill: currentColor; }
+.btn.rec .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rec); }
+.btn.rec[aria-pressed="true"] { border-color: var(--rec); color: var(--rec); }
+.btn.rec[aria-pressed="true"] .dot { border-radius: 2px; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); max-width: 100%; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 6px 11px; cursor: pointer; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:hover { background: var(--sunken); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: .9rem; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.rec-status { margin: 0; flex-basis: 100%; font-size: .82rem; color: var(--muted); min-height: 1.3em; font-variant-numeric: tabular-nums; }
+.rec-status.err, .rec-status.live { color: var(--rec); }
+.rec-status.ok { color: var(--accent); }
+
+.banner.ok { background: var(--accent-soft); }
+.banner.ok.err { background: var(--warn-soft); }
+.tap-hint { margin: -4px 0 0; padding: 9px 12px; background: var(--accent-soft); border-radius: 8px; font-size: .86rem; }
+.share { display: grid; gap: 8px; justify-items: start; padding: 14px; border-bottom: 1px solid var(--line); background: var(--sunken); }
+.share-note { margin: 0; font-size: .84rem; color: var(--muted); }
+.share-row { display: flex; gap: 8px; width: 100%; }
+.share-row input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font: .8rem/1.3 var(--font-mono); }
+.keys { font-size: .85rem; color: var(--muted); padding: 0 2px; }
+@media (pointer: coarse) { .keys, #openShare { display: none; } }
+.keys summary { cursor: pointer; padding: 2px 0; width: max-content; }
+.keys dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 16px; margin: 10px 0 8px; }
+.keys dl div { display: flex; gap: 8px; align-items: baseline; }
+.keys dt { min-width: 4.8em; }
+.keys dd { margin: 0; color: var(--ink); }
+.keys p { margin: 0 0 6px; }
+kbd { font: 500 .74rem/1 var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 2px 5px; background: var(--surface); color: var(--ink); }
+
+/* ledger */
+.ledger { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.ledger-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.ledger-head strong { font-weight: 600; font-size: .95rem; }
+.ledger-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.chunk {
+  position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 9px 14px 7px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: .8rem;
+}
+.chunk-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.chunk strong { font-weight: 600; letter-spacing: .02em; }
+.ch-title { font-weight: 500; }
+.ch-title:empty { display: none; }
+.chunk .t { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctl-hint { font-size: .78rem; color: var(--muted); }
+.link { border: 0; background: none; color: var(--accent); cursor: pointer; font-size: .8rem; padding: 2px 0; }
+.link:hover { text-decoration: underline; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.row { display: grid; grid-template-columns: 3.7em minmax(0, 1fr) auto; gap: 2px 10px; align-items: start; padding: 9px 12px 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.row:hover { background: var(--sunken); }
+.row.current { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.row-time { border: 0; background: none; padding: 3px 0 0; text-align: left; cursor: pointer; font: 500 .75rem/1.6 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.row.current .row-time { color: var(--accent); }
+.row-text { margin: 0; font: 400 1rem/1.5 var(--font-read); overflow-wrap: anywhere; }
+.row-tools { display: flex; align-items: center; gap: 4px; padding-top: 2px; }
+.rec-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rec); }
+.icon-btn { border: 0; background: transparent; padding: 3px; border-radius: 6px; color: var(--muted); cursor: pointer; display: inline-grid; place-items: center; }
+.icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.row .star { opacity: .4; }
+.row:hover .star, .row .star:focus-visible, .row .star[aria-pressed="true"] { opacity: 1; }
+.row .star[aria-pressed="true"] { color: var(--star); }
+.row .star[aria-pressed="true"] svg { fill: currentColor; }
+.empty { margin: 0; padding: 28px 18px; color: var(--muted); font-size: .9rem; }
+
+/* import */
+.import { padding: 18px 18px 22px; display: grid; gap: 12px; overflow: auto; }
+.import h2 { margin: 0; font-size: 1.1rem; font-weight: 600; text-wrap: balance; }
+.import .lede { margin: 0; color: var(--muted); font-size: .9rem; }
+.steps { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: .9rem; }
+.steps a { color: var(--accent); }
+.fld { font-size: .78rem; color: var(--muted); letter-spacing: .03em; margin-bottom: -6px; }
+.import input[type="text"], .import textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 9px 11px;
+}
+.import input[type="text"] { font: .85rem/1.4 var(--font-mono); }
+.import textarea { min-height: 220px; resize: vertical; font: .84rem/1.5 var(--font-mono); }
+.msg { margin: 0; font-size: .86rem; min-height: 1.2em; }
+.msg.err { color: var(--rec); }
+.import-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.note { margin: 0; font-size: .8rem; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn.rec[aria-pressed="true"] .dot { animation: none; }
+  .p-current, .p-side, .row-text { transition: none; }
+}
+</style>
+</head>
+<body data-mode="sentence">
+
+<header class="top">
+  <div class="brand">
+    <h1>Market Views 쉐도잉</h1>
+    <p class="video-title" id="videoTitle">Jon Gray · Blackstone</p>
+  </div>
+  <div class="top-right">
+    <span class="stats" id="stats"></span>
+    <button class="btn" id="openShare" type="button" hidden>폰으로 보내기</button>
+    <button class="btn" id="openImport" type="button">스크립트 붙여넣기</button>
+  </div>
+</header>
+<p class="banner" id="fileWarn" hidden>이 파일을 직접 열면 영상이 재생되지 않습니다. 같은 폴더의 <b>start.bat</b>를 더블클릭해서 여세요.</p>
+<p class="banner ok" id="notice" role="status" hidden></p>
+
+<main class="desk" id="desk">
+  <section class="stage" aria-label="연습">
+    <div class="video">
+      <div id="player"></div>
+      <p class="video-msg" id="videoMsg" hidden></p>
+    </div>
+    <p class="tap-hint" id="tapHint" hidden>휴대폰에서는 처음 한 번 영상 화면의 ▶를 직접 눌러 주세요. 그다음부터는 아래 버튼으로 문장을 재생할 수 있습니다.</p>
+    <p class="focus-note" id="focusNote" hidden>지금은 키보드 입력이 영상으로 갑니다. 페이지 빈 곳을 한 번 클릭하면 단축키가 다시 작동합니다.</p>
+
+    <div class="prompter">
+      <div class="p-meta"><span id="pPos">문장 —</span><span id="pTime"></span></div>
+      <p class="p-side" id="pPrev"></p>
+      <p class="p-current placeholder" id="pCur">스크립트를 붙여넣으면 지금 연습할 문장이 여기에 크게 표시됩니다.</p>
+      <div class="prog" aria-hidden="true"><span id="pProg"></span></div>
+      <p class="p-side" id="pNext"></p>
+      <div class="cue" id="cue" hidden><span>따라 말해 보세요</span><div class="cue-bar"><span id="cueFill"></span></div></div>
+      <p class="blind-hint">가린 문장은 누르면 보입니다.</p>
+    </div>
+
+    <div class="panel controls">
+      <div class="ctl-row">
+        <span class="ctl-label">재생</span>
+        <div class="ctl">
+          <button class="btn icon" id="prevBtn" type="button" aria-label="이전 문장" title="이전 문장 (←)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2.2v14H6zM19 5v14L9 12z"/></svg></button>
+          <button class="btn primary" id="playBtn" type="button"><span id="playIcon"></span><span id="playLabel">재생</span></button>
+          <button class="btn icon" id="nextBtn" type="button" aria-label="다음 문장" title="다음 문장 (→)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.8 5H18v14h-2.2zM5 5v14l10-7z"/></svg></button>
+          <button class="btn star-btn" id="starCur" type="button" aria-pressed="false" title="어려운 문장 표시 (S)"><svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>어려운 문장</button>
+        </div>
+      </div>
+      <div class="ctl-row">
+        <span class="ctl-label">속도</span>
+        <div class="ctl">
+          <div class="seg" data-setting="rate" data-type="num" role="group" aria-label="재생 속도">
+            <button type="button" data-value="0.5">0.5×</button><button type="button" data-value="0.75">0.75×</button><button type="button" data-value="1">1×</button><button type="button" data-value="1.25">1.25×</button>
+          </div>
+        </div>
+      </div>
+      <div class="ctl-row">
+        <span class="ctl-label">연습 방식</span>
+        <div class="ctl">
+          <div class="seg" data-setting="mode" role="group" aria-label="연습 방식">
+            <button type="button" data-value="sentence">문장마다 멈춤</button><button type="button" data-value="flow">연속 재생 (쉐도잉)</button>
+          </div>
+        </div>
+      </div>
+      <div class="ctl-row only-sentence">
+        <span class="ctl-label">반복</span>
+        <div class="ctl">
+          <div class="seg" data-setting="repeat" data-type="num" role="group" aria-label="문장 반복 횟수">
+            <button type="button" data-value="1">1회</button><button type="button" data-value="2">2회</button><button type="button" data-value="3">3회</button><button type="button" data-value="5">5회</button><button type="button" data-value="0">계속</button>
+          </div>
+          <label class="check"><input type="checkbox" id="autoNext">끝나면 다음 문장</label>
+        </div>
+      </div>
+      <div class="ctl-row only-sentence">
+        <span class="ctl-label">문장 뒤 멈춤</span>
+        <div class="ctl">
+          <div class="seg" data-setting="gap" role="group" aria-label="문장 뒤 멈춤 시간">
+            <button type="button" data-value="none">없음</button><button type="button" data-value="short">1.5초</button><button type="button" data-value="match">문장 길이만큼</button>
+          </div>
+        </div>
+      </div>
+      <div class="ctl-row only-sentence">
+        <span class="ctl-label">문장 끝 여유</span>
+        <div class="ctl">
+          <div class="seg" data-setting="tail" role="group" aria-label="문장 끝 여유">
+            <button type="button" data-value="short">짧게</button><button type="button" data-value="normal">보통</button><button type="button" data-value="long">길게</button>
+          </div>
+          <span class="ctl-hint">끝 단어가 잘리면 길게, 다음 문장이 섞이면 짧게</span>
+        </div>
+      </div>
+      <div class="ctl-row only-flow">
+        <span class="ctl-label">구간</span>
+        <div class="ctl">
+          <label class="check"><input type="checkbox" id="chunkLoop">지금 구간만 반복</label>
+        </div>
+      </div>
+      <div class="ctl-row">
+        <span class="ctl-label">보기</span>
+        <div class="ctl">
+          <label class="check"><input type="checkbox" id="blind">문장 가리기 (블라인드)</label>
+          <label class="check"><input type="checkbox" id="starOnly">★ 문장만</label>
+        </div>
+      </div>
+      <div class="ctl-row">
+        <span class="ctl-label">녹음</span>
+        <div class="ctl">
+          <button class="btn rec" id="recBtn" type="button" aria-pressed="false" title="녹음 시작/정지 (R)"><span class="dot"></span><span id="recLabel">녹음</span></button>
+          <button class="btn" id="mineBtn" type="button" disabled>내 녹음 듣기</button>
+          <button class="btn" id="compareBtn" type="button" disabled title="원본 다음에 내 녹음 (C)">원본과 비교</button>
+          <p class="rec-status" id="recStatus" role="status">문장을 듣고 녹음한 뒤 원본과 비교해 보세요. 녹음은 새로고침하면 지워집니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <details class="keys">
+      <summary>단축키</summary>
+      <dl>
+        <div><dt><kbd>Space</kbd></dt><dd>재생 / 멈춤</dd></div>
+        <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>이전 / 다음 문장</dd></div>
+        <div><dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>속도 내리기 / 올리기</dd></div>
+        <div><dt><kbd>M</kbd></dt><dd>연습 방식 바꾸기</dd></div>
+        <div><dt><kbd>H</kbd></dt><dd>문장 가리기</dd></div>
+        <div><dt><kbd>S</kbd></dt><dd>어려운 문장 ★</dd></div>
+        <div><dt><kbd>R</kbd></dt><dd>녹음 시작 / 정지</dd></div>
+        <div><dt><kbd>C</kbd></dt><dd>원본 → 내 녹음 비교</dd></div>
+      </dl>
+      <p>한글 입력 상태여도 단축키는 작동합니다. 영상 화면을 클릭한 뒤에는 페이지 빈 곳을 한 번 클릭하세요.</p>
+    </details>
+  </section>
+
+  <aside class="ledger" aria-label="문장 목록">
+    <div class="share" id="sharePanel" hidden>
+      <strong>휴대폰으로 보내기</strong>
+      <p class="share-note">이 링크를 휴대폰에서 열면 스크립트와 ★ 표시가 그대로 들어갑니다. 링크에 스크립트 전체가 들어 있으니 자신에게만 보내세요.</p>
+      <div class="share-row">
+        <input id="shareLink" type="text" readonly aria-label="휴대폰으로 보낼 링크">
+        <button class="btn primary" id="copyShare" type="button">복사</button>
+      </div>
+      <p class="msg" id="shareMsg" role="status"></p>
+      <button class="link" id="closeShare" type="button">닫기</button>
+    </div>
+    <div class="ledger-head" id="listHead">
+      <strong>문장 목록</strong>
+      <div class="seg" data-setting="unit" role="group" aria-label="나누는 단위">
+        <button type="button" data-value="sentence">문장 단위</button><button type="button" data-value="caption">자막 줄 단위</button>
+      </div>
+    </div>
+    <div class="ledger-body" id="ledgerBody">
+      <div id="rows"></div>
+      <p class="empty" id="emptyStar" hidden>★ 표시한 문장이 없습니다. 어려운 문장에서 S 키나 별 버튼을 눌러 표시하세요.</p>
+    </div>
+
+    <form class="import" id="importView" hidden>
+      <h2>스크립트 붙여넣기</h2>
+      <p class="lede">유튜브 스크립트를 붙여넣으면 문장 단위로 나누고, 약 1분 20초씩 연습 구간을 만듭니다.</p>
+      <ol class="steps">
+        <li><a id="ytLink" href="https://www.youtube.com/watch?v=iFQsenYnVt0" target="_blank" rel="noopener">유튜브에서 영상 열기 ↗</a> → 설명란의 <b>...더보기</b> → 맨 아래 <b>스크립트 표시</b></li>
+        <li>스크립트에 <b>0:19</b> 같은 시간이 보이는지 확인합니다. 안 보이면 스크립트 패널의 <b>⋮</b> 메뉴에서 <b>타임스탬프 전환</b>을 누르세요.</li>
+        <li>스크립트 첫 줄부터 마지막 줄까지 드래그해 복사(Ctrl+C)하고 아래 칸에 붙여넣습니다.</li>
+      </ol>
+      <label class="fld" for="videoUrl">영상 주소</label>
+      <input id="videoUrl" type="text" spellcheck="false" autocomplete="off">
+      <label class="fld" for="rawInput">스크립트</label>
+      <textarea id="rawInput" spellcheck="false" placeholder="0:19&#10;first caption line goes here&#10;0:23&#10;and the next caption line here"></textarea>
+      <p class="msg" id="importMsg" role="status"></p>
+      <div class="import-actions">
+        <button class="btn primary" type="submit">문장 만들기</button>
+        <button class="btn" type="button" id="cancelImport">취소</button>
+      </div>
+      <p class="note">스크립트와 ★ 표시는 이 브라우저에 저장되어 다음에 열어도 남아 있습니다. SRT·VTT 자막 파일 내용도 붙여넣을 수 있습니다.</p>
+    </form>
+  </aside>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const DEFAULT_VIDEO = 'iFQsenYnVt0';
+  const PUBLIC_URL = 'https://khseong0418-star.github.io/shadowing/';   // links made on localhost point here
+  const PAD_PRE = 0.1;     // start a little before the caption
+  const PAD_EST = 0.3;     // before a start estimated inside a caption
+  const RATES = [0.5, 0.75, 1, 1.25];
+  const CHUNK_SEC = 80;
+  const MAX_SENT = 15;     // seconds; longer sentences are split at a clause
+  const MAX_RUN = 8;       // seconds per piece when captions have no punctuation
+  const ABBR = new Set(['mr.', 'mrs.', 'ms.', 'dr.', 'st.', 'vs.', 'etc.', 'e.g.', 'i.e.', 'inc.', 'co.', 'corp.', 'ltd.', 'jr.', 'sr.', 'no.', 'approx.',
+    'jan.', 'feb.', 'mar.', 'apr.', 'jun.', 'jul.', 'aug.', 'sep.', 'sept.', 'oct.', 'nov.', 'dec.']);
+  const JOINERS = new Set(['and', 'but', 'so', 'because', 'which', 'that', 'where', 'when', 'while', 'if', 'or', 'as', 'then', 'who',
+    'although', 'though', 'whether', 'since', 'until', 'unless', 'whereas']);
+  const OPENERS = new Set(['first', 'second', 'third', 'finally', 'look', 'okay', 'overall', 'importantly']);
+  // A piece should never end on a word that needs what comes next.
+  const DANGLING = new Set(['the', 'a', 'an', 'to', 'of', 'for', 'in', 'on', 'at', 'with', 'by', 'from', 'into', 'and', 'or', 'but', 'that',
+    'which', 'is', 'are', 'was', 'were', 'be', 'been', 'our', 'their', 'my', 'your', 'its', 'this', 'these', 'those', 'very', 'more', 'most',
+    'than', 'as', 'we', 'i', 'you', 'they', 'it', 'have', 'has', 'had', 'will', 'would', 'can', 'could', 'should', 'not', "don't", 'about', 'some', 'any']);
+  const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z"/></svg>';
+  const ICON_STAR = '<svg viewBox="0 0 24 24"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>';
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+  };
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const settings = Object.assign({
+    mode: 'sentence', rate: 1, repeat: 1, gap: 'short', autoNext: true,
+    chunkLoop: false, blind: false, starOnly: false, unit: 'sentence', tail: 'normal'
+  }, store.get('shadowing:settings', {}));
+
+  const S = {
+    videoId: store.get('shadowing:video', DEFAULT_VIDEO),
+    raw: '', segs: [], chapters: [], units: [], chunks: [], cur: 0,
+    phase: 'idle',          // idle | playing (one sentence) | gap | flow (continuous)
+    target: null, repDone: 0, outTicks: 0, oneShot: null, gapTimer: 0,
+    starred: new Set(), recordings: new Map(),
+    selfPause: false, userScrolledAt: 0, saveTimer: 0
+  };
+
+  // ---------- transcript parsing ----------
+  function clockToSec(str) {
+    const p = str.split(':').map(Number);
+    return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1];
+  }
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+  }
+  function cleanText(t) {
+    return t
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/&gt;&gt;|>>/g, ' ')
+      .replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  // A caption runs until the next one starts, but never through a long silence.
+  function capEnd(start, text, nextStart) {
+    const limit = start + Math.max(4, text.split(' ').length * 0.5 + 2);
+    return nextStart == null ? limit : Math.min(nextStart, limit);
+  }
+  function finish(segs) {
+    segs.sort((a, b) => a.start - b.start);
+    segs.forEach((s) => { s.text = cleanText(s.text); });
+    segs.forEach((s, i) => {
+      if (s.end == null) s.end = capEnd(s.start, s.text, i + 1 < segs.length ? segs[i + 1].start : null);
+    });
+    return segs.filter((s) => s.text && s.end > s.start);
+  }
+  function looksLikeTitle(line) {
+    const words = line.split(/\s+/);
+    if (words.length < 2 || words.length > 9 || /[.?!,;:]["'”’)]?$/.test(line)) return false;
+    const long = words.filter((w) => /^[A-Za-z]/.test(w) && w.length >= 4);
+    return long.length > 0 && long.every((w) => /^[A-Z]/.test(w));
+  }
+  // YouTube "Show transcript" copy: a time line, then the caption text. Chapter titles
+  // come through as an extra Title Case line between two captions, often mid-sentence.
+  function parsePlain(raw) {
+    const lines = raw.replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
+    const clock = /^(?:\d{1,2}:)?\d{1,2}:\d{2}$/;
+    const inline = /^[(\[]?((?:\d{1,2}:)?\d{1,2}:\d{2})[)\]]?[\s\-–—:]+(.+)$/;
+    const spoken = /^(?:\d+\s*(?:hours?|minutes?|seconds?|시간|분|초)[\s,]*)+$/i;
+    const segs = [];
+    let cur = null;
+    for (const line of lines) {
+      if (clock.test(line)) { cur = { start: clockToSec(line), lines: [] }; segs.push(cur); continue; }
+      const m = line.match(inline);
+      if (m) { cur = { start: clockToSec(m[1]), lines: [m[2]] }; segs.push(cur); continue; }
+      if (spoken.test(line) || !cur) continue;
+      cur.lines.push(line);
+    }
+    // With one-line captions any extra line is a chapter title. Where two-line captions
+    // are common, only a title that follows a finished sentence counts ("Jon Gray" stays).
+    const multi = segs.filter((s) => s.lines.length > 1).length / Math.max(1, segs.length);
+    const chapters = [];
+    segs.forEach((s, i) => {
+      const keep = s.lines.slice(0, 1);
+      for (const line of s.lines.slice(1)) {
+        const title = looksLikeTitle(line) && (multi < 0.15 || /[.?!]["'”’)]?$/.test(keep.join(' ')));
+        if (!title) keep.push(line);
+        else if (segs[i + 1]) chapters.push({ time: segs[i + 1].start, title: line });
+      }
+      s.text = keep.join(' ');
+      delete s.lines;
+    });
+    const out = finish(segs);
+    out.chapters = chapters;
+    return out;
+  }
+  // SRT / VTT subtitle files.
+  function parseTimed(raw) {
+    const re = /((?:\d{1,2}:)?\d{1,2}:\d{2})[.,](\d{1,3})\s*-->\s*((?:\d{1,2}:)?\d{1,2}:\d{2})[.,](\d{1,3})/;
+    const segs = [];
+    for (const block of raw.replace(/\r/g, '').split(/\n\s*\n/)) {
+      const lines = block.split('\n');
+      const at = lines.findIndex((l) => re.test(l));
+      if (at < 0) continue;
+      const m = lines[at].match(re);
+      segs.push({
+        start: clockToSec(m[1]) + Number('0.' + m[2]),
+        end: clockToSec(m[3]) + Number('0.' + m[4]),
+        text: lines.slice(at + 1).join(' ')
+      });
+    }
+    const out = finish(segs);
+    return out.filter((s, i) => i === 0 || s.text !== out[i - 1].text);
+  }
+  function parseTranscript(raw) {
+    return /-->/.test(raw) ? parseTimed(raw) : parsePlain(raw);
+  }
+
+  // Captions break lines wherever they like, so sentences are rebuilt word by word.
+  // Each word gets an estimated time inside its caption, in proportion to its length.
+  function wordTimeline(segs) {
+    const words = [];
+    for (const s of segs) {
+      const toks = s.text.split(' ').filter(Boolean);
+      const total = toks.reduce((a, w) => a + w.length + 1, 0);
+      let acc = 0;
+      toks.forEach((w, k) => {
+        const start = s.start + (s.end - s.start) * acc / total;
+        acc += w.length + 1;
+        words.push({ w, start, end: s.start + (s.end - s.start) * acc / total, first: k === 0, last: k === toks.length - 1 });
+      });
+    }
+    return words;
+  }
+  function endsSentence(tok, next) {
+    const bare = tok.replace(/["'”’)\]]+$/, '');
+    if (/[?!]$/.test(bare)) return true;
+    if (!/\.$/.test(bare)) return false;
+    const low = bare.toLowerCase();
+    if (ABBR.has(low) || /^(?:[a-z]\.){2,}$/.test(low) || /^[A-Z]\.$/.test(bare)) return false;   // U.S., J.
+    return !next || /^["'“‘(\[]?[A-Z0-9]/.test(next);
+  }
+  function makeUnit(ws) {
+    const a = ws[0], b = ws[ws.length - 1];
+    return { start: a.start, end: b.end, text: ws.map((x) => x.w).join(' '), startExact: a.first, endExact: b.last, words: ws };
+  }
+  // Best place to cut a long sentence: after a comma, before "which/because/but...",
+  // on a caption boundary, and not too far from the middle. A bare "and" usually joins
+  // two nouns ("capital and the war"), so it barely counts. Both halves keep 4+ words and 2+ s.
+  function bestBreak(ws) {
+    const t0 = ws[0].start, t1 = ws[ws.length - 1].end, mid = (t0 + t1) / 2, dur = t1 - t0;
+    let best = -1, bestScore = -Infinity;
+    for (let k = 3; k <= ws.length - 5; k++) {
+      const left = ws[k], right = ws[k + 1];
+      if (left.end - t0 < 2 || t1 - right.start < 2) continue;
+      const lw = left.w.toLowerCase().replace(/[^a-z']/g, ''), rw = right.w.toLowerCase().replace(/[^a-z']/g, '');
+      let score = 0;
+      if (/[,;:—–]["'”’)]?$|^-+$/.test(left.w)) score += 4;
+      else if (DANGLING.has(lw)) score -= 3;
+      if (JOINERS.has(rw)) score += rw === 'and' || rw === 'or' ? 0.5 : 2;
+      else if (OPENERS.has(rw)) score += 1.5;
+      if (left.last) score += 1;
+      score -= Math.abs(left.end - mid) / dur * 3;
+      if (score > bestScore) { bestScore = score; best = k; }
+    }
+    return { k: best, score: bestScore };
+  }
+  function splitLong(u, max) {
+    const dur = u.end - u.start;
+    if (dur <= max || u.words.length < 8) return [u];
+    const { k, score } = bestBreak(u.words);
+    // With no comma or clause word to cut at, keep the sentence whole unless it is very long.
+    if (k < 0 || (score < 2 && dur < max * 1.5)) return [u];
+    return splitLong(makeUnit(u.words.slice(0, k + 1)), max).concat(splitLong(makeUnit(u.words.slice(k + 1)), max));
+  }
+  function buildUnits(segs, unitMode) {
+    if (unitMode === 'caption') return segs.map((s) => ({ start: s.start, end: s.end, text: s.text, startExact: true, endExact: true }));
+    const W = wordTimeline(segs);
+    const punctuated = segs.filter((s) => /[.?!]/.test(s.text)).length / Math.max(1, segs.length) > 0.2;
+    const max = punctuated ? MAX_SENT : MAX_RUN;
+    let units = [], cur = [];
+    const flush = () => { if (cur.length) units.push(makeUnit(cur)); cur = []; };
+    W.forEach((w, i) => {
+      const prev = cur[cur.length - 1];
+      if (prev && w.first && w.start - prev.end > 1.5) flush();   // long silence between captions
+      cur.push(w);
+      if (punctuated && endsSentence(w.w, W[i + 1] && W[i + 1].w)) flush();
+    });
+    flush();
+    units = units.flatMap((u) => splitLong(u, max));
+    // A one- or two-word scrap ("Let's go.") joins the sentence it shares a caption line
+    // with. A scrap that is a whole caption by itself ("No!") stays on its own.
+    const out = [];
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i], next = units[i + 1], prev = out[out.length - 1];
+      if (u.words.length <= 2) {
+        if (!u.endExact && next) { units[i + 1] = makeUnit(u.words.concat(next.words)); continue; }
+        if (!u.startExact && prev) { out[out.length - 1] = makeUnit(prev.words.concat(u.words)); continue; }
+      }
+      out.push(u);
+    }
+    out.forEach((u) => { delete u.words; });
+    return out;
+  }
+  // Transcript times are whole seconds, so the next caption may really start up to a
+  // second later than shown. The tail setting decides how much of that to play.
+  const TAIL = { short: 0.15, normal: 0.5, long: 0.9 };
+  const playFrom = (u) => Math.max(0, u.start - (u.startExact ? PAD_PRE : PAD_EST));
+  const playTo = (u) => u.end + (TAIL[settings.tail] || TAIL.normal) + (u.endExact ? 0 : 0.1);
+  // Chapters from the transcript mark the natural sections. A chapter over two minutes,
+  // or a video without chapters, is cut again into ~80 s pieces.
+  function buildChunks(units, chapters) {
+    const starts = [0], titles = [''];
+    (chapters || []).forEach((ch) => {
+      const i = units.findIndex((u) => u.end > ch.time + 0.01);
+      if (i < 0) return;
+      if (i === starts[starts.length - 1]) titles[titles.length - 1] = ch.title;
+      else if (i > starts[starts.length - 1]) { starts.push(i); titles.push(ch.title); }
+    });
+    const hasChapters = !!(chapters && chapters.length);
+    const chunks = [];
+    starts.forEach((from, j) => {
+      const to = (j + 1 < starts.length ? starts[j + 1] : units.length) - 1;
+      if (to < from) return;
+      const whole = hasChapters && units[to].end - units[from].start <= 120;
+      const parts = [];
+      let c = null;
+      for (let i = from; i <= to; i++) {
+        const u = units[i];
+        if (!c || (!whole && u.start - c.start >= CHUNK_SEC)) { c = { from: i, to: i, start: u.start, end: u.end, title: titles[j] }; parts.push(c); }
+        else { c.to = i; c.end = u.end; }
+      }
+      const last = parts[parts.length - 1];
+      if (parts.length > 1 && last.end - last.start < 25) {
+        const prev = parts[parts.length - 2];
+        prev.to = last.to; prev.end = last.end; parts.pop();
+      }
+      if (parts.length > 1 && titles[j]) parts.forEach((p, n) => { p.title = `${titles[j]} (${n + 1}/${parts.length})`; });
+      chunks.push(...parts);
+    });
+    chunks.forEach((ch, ci) => { for (let i = ch.from; i <= ch.to; i++) units[i].chunk = ci; });
+    return chunks;
+  }
+  const key = (u) => String(Math.round(u.start * 10));
+
+  // ---------- saved data ----------
+  const dataKey = () => 'shadowing:data:' + S.videoId;
+  function saveData() { store.set(dataKey(), { raw: S.raw, starred: Array.from(S.starred), cur: S.cur }); }
+  function saveSoon() { clearTimeout(S.saveTimer); S.saveTimer = setTimeout(saveData, 600); }
+  function saveSettings() { store.set('shadowing:settings', settings); }
+
+  function applyRaw(raw) {
+    const segs = parseTranscript(raw);
+    if (segs.length < 2) return false;
+    if (raw !== S.raw && S.units.length) S.cur = 0;
+    S.raw = raw; S.segs = segs; S.chapters = segs.chapters || [];
+    rebuild(null);
+    saveData();
+    return true;
+  }
+  function rebuild(keepTime) {
+    S.units = buildUnits(S.segs, settings.unit);
+    S.chunks = buildChunks(S.units, S.chapters);
+    if (keepTime != null) S.cur = Math.max(0, unitAt(keepTime));
+    S.cur = Math.max(0, Math.min(S.cur, S.units.length - 1));
+    renderList(); renderPrompter(); renderStats();
+  }
+  function unitAt(t) {
+    let found = -1;
+    for (let i = 0; i < S.units.length; i++) {
+      if (S.units[i].start - 0.3 <= t) found = i; else break;
+    }
+    return found;
+  }
+
+  // ---------- rendering ----------
+  function renderStats() {
+    $('#openShare').hidden = !S.units.length;
+    if (!S.units.length) { $('#stats').textContent = ''; return; }
+    const stars = S.units.filter((u) => S.starred.has(key(u))).length;
+    $('#stats').textContent = `문장 ${S.units.length} · 구간 ${S.chunks.length} · ★ ${stars}`;
+    $('#openImport').textContent = '스크립트 바꾸기';
+  }
+  function rowEl(i) {
+    const u = S.units[i];
+    const li = document.createElement('li');
+    li.className = 'row'; li.dataset.i = i;
+    const t = document.createElement('button');
+    t.type = 'button'; t.className = 'row-time'; t.textContent = fmt(u.start);
+    t.setAttribute('aria-label', fmt(u.start) + ' 문장 재생');
+    const p = document.createElement('p');
+    p.className = 'row-text'; p.textContent = u.text;
+    const tools = document.createElement('div');
+    tools.className = 'row-tools';
+    const dot = document.createElement('span');
+    dot.className = 'rec-dot'; dot.title = '내 녹음 있음'; dot.hidden = !S.recordings.has(key(u));
+    const star = document.createElement('button');
+    star.type = 'button'; star.className = 'icon-btn star'; star.dataset.act = 'star';
+    star.setAttribute('aria-label', '어려운 문장 표시');
+    star.setAttribute('aria-pressed', String(S.starred.has(key(u))));
+    star.innerHTML = ICON_STAR;
+    tools.append(dot, star);
+    li.append(t, p, tools);
+    return li;
+  }
+  function renderList() {
+    const host = $('#rows');
+    host.textContent = '';
+    const frag = document.createDocumentFragment();
+    S.chunks.forEach((c, ci) => {
+      const sec = document.createElement('section');
+      sec.className = 'chunk-sec';
+      const head = document.createElement('div');
+      head.className = 'chunk';
+      head.innerHTML = `<div class="chunk-name"><strong>구간 ${ci + 1}</strong><span class="ch-title"></span><span class="t">${fmt(c.start)}–${fmt(c.end)}</span></div>` +
+        `<button type="button" class="link" data-act="chunk" data-chunk="${ci}">이 구간 연속 재생</button>`;
+      head.querySelector('.ch-title').textContent = c.title || '';
+      const ol = document.createElement('ol');
+      ol.className = 'rows';
+      for (let i = c.from; i <= c.to; i++) ol.appendChild(rowEl(i));
+      sec.append(head, ol);
+      frag.appendChild(sec);
+    });
+    host.appendChild(frag);
+    applyFilter();
+    markCurrent(true);
+  }
+  function applyFilter() {
+    const only = settings.starOnly;
+    let any = false;
+    $$('#rows .chunk-sec').forEach((sec) => {
+      let visible = 0;
+      sec.querySelectorAll('.row').forEach((r) => {
+        const show = !only || S.starred.has(key(S.units[+r.dataset.i]));
+        r.hidden = !show;
+        if (show) visible++;
+      });
+      sec.hidden = visible === 0;
+      if (visible) any = true;
+    });
+    $('#emptyStar').hidden = !(only && !any && S.units.length);
+  }
+  function markCurrent(force) {
+    const body = $('#ledgerBody');
+    body.querySelectorAll('.row.current').forEach((r) => r.classList.remove('current'));
+    const row = body.querySelector(`.row[data-i="${S.cur}"]`);
+    if (!row || row.hidden) return;
+    row.classList.add('current');
+    if (!force && performance.now() - S.userScrolledAt < 4000) return;
+    const br = body.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    if (rr.top < br.top + 40 || rr.bottom > br.bottom) {
+      body.scrollTo({ top: body.scrollTop + (rr.top - br.top) - br.height * 0.3, behavior: reducedMotion || force ? 'auto' : 'smooth' });
+    }
+  }
+  function renderPrompter() {
+    const u = S.units[S.cur];
+    const cur = $('#pCur');
+    cur.classList.remove('revealed');
+    cur.classList.toggle('placeholder', !u);
+    if (!u) {
+      cur.textContent = '스크립트를 붙여넣으면 지금 연습할 문장이 여기에 크게 표시됩니다.';
+      $('#pPrev').textContent = ''; $('#pNext').textContent = '';
+      $('#pPos').textContent = '문장 —'; $('#pTime').textContent = '';
+    } else {
+      cur.textContent = u.text;
+      $('#pPrev').textContent = S.units[S.cur - 1] ? S.units[S.cur - 1].text : '';
+      $('#pNext').textContent = S.units[S.cur + 1] ? S.units[S.cur + 1].text : '';
+      const ch = S.chunks[u.chunk];
+      $('#pPos').textContent = `문장 ${S.cur + 1} / ${S.units.length} · 구간 ${u.chunk + 1}` + (ch && ch.title ? ` · ${ch.title}` : '');
+      $('#pTime').textContent = `${fmt(u.start)} – ${fmt(u.end)}`;
+    }
+    $('#starCur').setAttribute('aria-pressed', String(!!u && S.starred.has(key(u))));
+    $('#pProg').style.width = '0';
+    renderRecUI();
+  }
+  function setCur(i) {
+    if (i === S.cur || !S.units[i]) return;
+    S.cur = i;
+    renderPrompter(); markCurrent(false); saveSoon();
+  }
+  function renderSettings() {
+    $$('.seg[data-setting]').forEach((g) => {
+      const v = String(settings[g.dataset.setting]);
+      g.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.value === v)));
+    });
+    ['autoNext', 'chunkLoop', 'blind', 'starOnly'].forEach((n) => { $('#' + n).checked = !!settings[n]; });
+    document.body.classList.toggle('is-blind', !!settings.blind);
+    document.body.dataset.mode = settings.mode;
+  }
+  function showView(v) {
+    const imp = v === 'import';
+    $('#importView').hidden = !imp;
+    $('#listHead').hidden = imp;
+    $('#ledgerBody').hidden = imp;
+    $('#cancelImport').hidden = !S.units.length;
+    $('#desk').classList.toggle('no-script', !S.units.length);
+    if (imp) {
+      $('#videoUrl').value = 'https://www.youtube.com/watch?v=' + S.videoId;
+      $('#ytLink').href = 'https://www.youtube.com/watch?v=' + S.videoId;
+      $('#rawInput').value = S.raw;
+      importMsg('');
+    }
+  }
+  function importMsg(text, isErr) {
+    const m = $('#importMsg');
+    m.textContent = text;
+    m.classList.toggle('err', !!isErr);
+  }
+
+  // ---------- player ----------
+  let player = null, playerReady = false, ytState = -1;
+  const est = { t: 0, wall: 0, raw: null, seekTo: null, seekAt: 0, preRaw: null };
+
+  window.onYouTubeIframeAPIReady = () => {
+    player = new YT.Player('player', {
+      videoId: S.videoId,
+      playerVars: { playsinline: 1, rel: 0, cc_load_policy: 0, origin: location.origin },
+      events: {
+        onReady: () => {
+          playerReady = true;
+          player.setPlaybackRate(settings.rate);
+          updateTitle();
+          hideYouTubeCaptions();
+        },
+        onStateChange: (e) => onState(e.data),
+        onPlaybackRateChange: (e) => {
+          if (settings.rate !== e.data) { settings.rate = e.data; saveSettings(); renderSettings(); }
+        },
+        onError: (e) => {
+          const msgs = {
+            101: '영상 주인이 다른 사이트에서의 재생을 막아 두었습니다. 유튜브에서 직접 연습해 주세요.',
+            150: '영상 주인이 다른 사이트에서의 재생을 막아 두었습니다. 유튜브에서 직접 연습해 주세요.',
+            153: '영상을 불러오지 못했습니다. start.bat로 페이지를 열었는지 확인해 주세요.',
+            100: '영상을 찾을 수 없습니다. 영상 주소를 확인해 주세요.'
+          };
+          showVideoMsg(msgs[e.data] || '영상을 불러오지 못했습니다. (오류 ' + e.data + ')');
+        }
+      }
+    });
+  };
+  function loadYouTube() {
+    const s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.onerror = () => showVideoMsg('유튜브에 연결하지 못했습니다. 인터넷 연결을 확인하고 새로고침해 주세요.');
+    document.head.appendChild(s);
+  }
+  function showVideoMsg(text) { const m = $('#videoMsg'); m.textContent = text; m.hidden = !text; }
+  // YouTube's own captions would give the answer away in blind mode.
+  function hideYouTubeCaptions() {
+    if (!playerReady || !settings.blind) return;
+    try { player.unloadModule('captions'); } catch (e) { /* not supported */ }
+  }
+  function updateTitle() {
+    const d = player && player.getVideoData ? player.getVideoData() : null;
+    if (d && d.title) { $('#videoTitle').textContent = d.title; document.title = 'Market Views 쉐도잉'; }
+  }
+  function onState(st) {
+    ytState = st;
+    if (st === 1) {
+      $('#tapHint').hidden = true;
+      est.wall = performance.now();
+      if (S.phase === 'idle' || S.phase === 'gap') { cancelGap(); S.oneShot = null; S.phase = 'flow'; }
+      updateTitle();
+      hideYouTubeCaptions();
+    } else if (st === 2) {
+      if (!S.selfPause && (S.phase === 'playing' || S.phase === 'flow')) S.phase = 'idle';
+      S.selfPause = false;
+    } else if (st === 0) {
+      S.phase = 'idle';
+    } else if (st === 5) {
+      updateTitle();
+    }
+    renderPlayBtn();
+  }
+  function seekPlay(t) {
+    est.preRaw = player.getCurrentTime();
+    est.seekTo = t; est.seekAt = performance.now();
+    player.seekTo(t, true);
+    player.playVideo();
+  }
+  function pauseSelf() {
+    if (ytState === 1 || ytState === 3) S.selfPause = true;
+    player.pauseVideo();
+  }
+  // getCurrentTime() updates in steps and lags behind seeks, so smooth it.
+  function curTime() {
+    const raw = player.getCurrentTime() || 0;
+    const now = performance.now();
+    if (est.seekTo != null) {
+      const settled = (raw !== est.preRaw && Math.abs(raw - est.seekTo) < 1) || now - est.seekAt > 1500;
+      if (!settled) return est.seekTo;
+      est.seekTo = null; est.raw = raw; est.t = raw; est.wall = now;
+    }
+    if (raw !== est.raw) { est.raw = raw; est.t = raw; est.wall = now; }
+    if (ytState === 1) return est.t + Math.min(0.4, (now - est.wall) / 1000 * settings.rate);
+    return raw;
+  }
+
+  // ---------- practice logic ----------
+  function playUnit(i, fresh) {
+    if (!playerReady || !S.units[i]) return;
+    cancelGap(); stopMine();
+    S.oneShot = null;
+    if (fresh) S.repDone = 0;
+    if (i !== S.cur) setCur(i);
+    const u = S.units[i];
+    S.target = { start: playFrom(u), end: playTo(u) };
+    S.outTicks = 0;
+    S.phase = 'playing';
+    seekPlay(S.target.start);
+    renderPlayBtn();
+  }
+  function jumpTo(i) {
+    if (!playerReady || !S.units[i]) return;
+    if (settings.mode === 'sentence') { playUnit(i, true); return; }
+    cancelGap(); stopMine(); S.oneShot = null;
+    setCur(i);
+    S.phase = 'flow';
+    seekPlay(playFrom(S.units[i]));
+  }
+  function nextIndex(i, d) {
+    for (let j = i + d; j >= 0 && j < S.units.length; j += d) {
+      if (!settings.starOnly || S.starred.has(key(S.units[j]))) return j;
+    }
+    return -1;
+  }
+  function go(d) {
+    const n = nextIndex(S.cur, d);
+    if (n !== -1) jumpTo(n);
+  }
+  function togglePlay() {
+    if (!playerReady) return;
+    if (S.phase === 'gap') { cancelGap(); renderPlayBtn(); return; }
+    if (ytState === 1 || ytState === 3) { pauseSelf(); S.phase = 'idle'; renderPlayBtn(); return; }
+    if (!S.units.length) { S.phase = 'flow'; player.playVideo(); return; }
+    if (settings.mode === 'sentence') { playUnit(S.cur, true); return; }
+    const u = S.units[S.cur], t = curTime();
+    S.phase = 'flow';
+    if (t < u.start - 1 || t > u.end + 1) seekPlay(playFrom(u));
+    else player.playVideo();
+  }
+  function gapMs() {
+    const u = S.units[S.cur];
+    if (settings.gap === 'match') return Math.min(20000, (u.end - u.start) / settings.rate * 1150 + 600);
+    if (settings.gap === 'short') return 1500;
+    return 350;
+  }
+  function startGap(ms, then) {
+    clearTimeout(S.gapTimer);
+    S.phase = 'gap';
+    const cue = $('#cue'), fill = $('#cueFill');
+    cue.hidden = ms < 1000;
+    if (!cue.hidden) {
+      fill.style.transition = 'none';
+      fill.style.transform = 'scaleX(1)';
+      void fill.offsetWidth;
+      fill.style.transition = `transform ${ms}ms linear`;
+      fill.style.transform = 'scaleX(0)';
+    }
+    S.gapTimer = setTimeout(() => {
+      cue.hidden = true;
+      if (S.phase === 'gap') { S.phase = 'idle'; then(); }
+      renderPlayBtn();
+    }, ms);
+    renderPlayBtn();
+  }
+  function cancelGap() {
+    clearTimeout(S.gapTimer);
+    $('#cue').hidden = true;
+    if (S.phase === 'gap') S.phase = 'idle';
+  }
+  function onUnitEnd() {
+    pauseSelf();
+    S.phase = 'idle';
+    if (S.oneShot) { const fn = S.oneShot; S.oneShot = null; fn(); return; }
+    S.repDone++;
+    if (settings.repeat === 0 || S.repDone < settings.repeat) { startGap(gapMs(), () => playUnit(S.cur, false)); return; }
+    if (settings.autoNext) {
+      const n = nextIndex(S.cur, 1);
+      if (n !== -1) { startGap(gapMs(), () => playUnit(n, true)); return; }
+    }
+    if (settings.gap !== 'none') startGap(gapMs(), () => {});
+  }
+  function tick() {
+    if (!playerReady || !S.units.length) return;
+    const t = curTime();
+    if (S.phase === 'playing') {
+      const tg = S.target;
+      const outside = t < tg.start - 1 || t > tg.end + 2;
+      S.outTicks = outside ? S.outTicks + 1 : 0;
+      if (S.outTicks >= 4) { S.phase = 'flow'; S.oneShot = null; }   // moved with the YouTube timeline
+      else if (!outside && t >= tg.end) { onUnitEnd(); return; }
+    }
+    if (S.phase === 'flow' && (ytState === 1 || ytState === 3)) {
+      if (settings.mode === 'flow' && settings.chunkLoop) {
+        const c = S.chunks[S.units[S.cur].chunk];
+        if (t >= playTo(S.units[c.to]) && t < c.end + 2) { seekPlay(playFrom(S.units[c.from])); return; }
+      }
+      const i = unitAt(t);
+      if (i !== -1) setCur(i);
+    }
+    const u = S.units[S.cur];
+    if (u) {
+      const pct = Math.max(0, Math.min(1, (t - u.start) / Math.max(0.1, u.end - u.start)));
+      $('#pProg').style.width = (t >= u.start - 0.3 && t <= u.end + 0.5 ? pct * 100 : 0) + '%';
+    }
+    renderPlayBtn();
+  }
+  let lastBusy = null;
+  function renderPlayBtn() {
+    const busy = ytState === 1 || ytState === 3 || S.phase === 'gap';
+    if (busy === lastBusy) return;
+    lastBusy = busy;
+    $('#playIcon').innerHTML = busy ? ICON_PAUSE : ICON_PLAY;
+    $('#playLabel').textContent = busy ? '멈춤' : '재생';
+  }
+  function toggleStar(i) {
+    const u = S.units[i];
+    if (!u) return;
+    const k = key(u);
+    if (S.starred.has(k)) S.starred.delete(k); else S.starred.add(k);
+    saveData();
+    const btn = document.querySelector(`.row[data-i="${i}"] .star`);
+    if (btn) btn.setAttribute('aria-pressed', String(S.starred.has(k)));
+    if (i === S.cur) $('#starCur').setAttribute('aria-pressed', String(S.starred.has(k)));
+    renderStats(); applyFilter();
+  }
+  function setSetting(name, value) {
+    const keepTime = name === 'unit' && S.units[S.cur] ? S.units[S.cur].start : null;
+    settings[name] = value;
+    saveSettings();
+    if (name === 'rate' && playerReady) player.setPlaybackRate(value);
+    if (name === 'mode') {
+      cancelGap(); S.oneShot = null;
+      if (ytState === 1 || ytState === 3) {
+        if (value === 'flow') S.phase = 'flow';
+        else { pauseSelf(); S.phase = 'idle'; }
+      }
+    }
+    if (name === 'unit' && S.segs.length) rebuild(keepTime);
+    if (name === 'starOnly') applyFilter();
+    if (name === 'blind') hideYouTubeCaptions();
+    renderSettings(); renderPlayBtn();
+  }
+  function stepRate(d) {
+    let i = RATES.indexOf(settings.rate);
+    if (i === -1) i = RATES.indexOf(1);
+    const n = RATES[Math.max(0, Math.min(RATES.length - 1, i + d))];
+    if (n !== settings.rate) setSetting('rate', n);
+  }
+
+  // ---------- recording ----------
+  const rec = { mr: null, timer: 0, audio: null, compareTimer: 0 };
+  function recStatus(text, kind) {
+    const el = $('#recStatus');
+    el.textContent = text;
+    el.className = 'rec-status' + (kind ? ' ' + kind : '');
+  }
+  function renderRecUI() {
+    const u = S.units[S.cur];
+    const has = !!u && S.recordings.has(key(u));
+    const live = !!rec.mr && rec.mr.state === 'recording';
+    $('#recBtn').setAttribute('aria-pressed', String(live));
+    $('#recLabel').textContent = live ? '정지' : '녹음';
+    $('#recBtn').disabled = !u && !live;
+    $('#mineBtn').disabled = !has || live;
+    $('#compareBtn').disabled = !has || live;
+  }
+  async function toggleRecord() {
+    if (rec.mr && rec.mr.state === 'recording') { rec.mr.stop(); return; }
+    const u = S.units[S.cur];
+    if (!u) return;
+    if (!window.isSecureContext) {
+      recStatus('녹음은 https 주소(GitHub Pages)나 이 PC의 localhost 주소에서만 됩니다.', 'err');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      recStatus('이 브라우저에서는 녹음을 쓸 수 없습니다. 크롬이나 엣지에서 열어 주세요.', 'err');
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (e) {
+      recStatus('마이크를 쓸 수 없습니다. 주소창 왼쪽 아이콘에서 마이크를 허용한 뒤 다시 눌러 주세요.', 'err');
+      return;
+    }
+    if (playerReady && (ytState === 1 || ytState === 3)) pauseSelf();
+    cancelGap(); stopMine();
+    S.phase = 'idle'; S.oneShot = null;
+    const k = key(u), idx = S.cur, parts = [];
+    const mr = new MediaRecorder(stream);
+    rec.mr = mr;
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+    mr.onstop = () => {
+      stream.getTracks().forEach((tr) => tr.stop());
+      clearInterval(rec.timer);
+      rec.mr = null;
+      const old = S.recordings.get(k);
+      if (old) URL.revokeObjectURL(old);
+      S.recordings.set(k, URL.createObjectURL(new Blob(parts, { type: mr.mimeType || 'audio/webm' })));
+      const dot = document.querySelector(`.row[data-i="${idx}"] .rec-dot`);
+      if (dot) dot.hidden = false;
+      renderRecUI();
+      recStatus(`문장 ${idx + 1} 녹음을 저장했습니다. 원본과 비교(C)로 들어 보세요.`, 'ok');
+    };
+    mr.start();
+    const t0 = performance.now();
+    recStatus('녹음 중 0.0초 · 다시 누르면 멈춥니다', 'live');
+    rec.timer = setInterval(() => recStatus(`녹음 중 ${((performance.now() - t0) / 1000).toFixed(1)}초 · 다시 누르면 멈춥니다`, 'live'), 100);
+    renderRecUI(); renderPlayBtn();
+  }
+  function stopMine() {
+    clearTimeout(rec.compareTimer);
+    if (rec.audio) { rec.audio.pause(); rec.audio = null; }
+  }
+  function playMine(i, primed) {
+    const u = S.units[i];
+    const url = u && S.recordings.get(key(u));
+    if (!url) return;
+    stopMine();
+    rec.audio = primed || new Audio(url);
+    rec.audio.muted = false;
+    rec.audio.currentTime = 0;
+    rec.audio.onended = () => recStatus('');
+    rec.audio.play().then(() => recStatus('내 녹음 재생 중', 'ok')).catch(() => recStatus('녹음을 재생하지 못했습니다.', 'err'));
+  }
+  function compare() {
+    const u = S.units[S.cur];
+    if (!u) return;
+    if (!S.recordings.has(key(u))) { recStatus('이 문장은 아직 녹음이 없습니다. 녹음(R)부터 해 주세요.', 'err'); return; }
+    if (!playerReady) return;
+    const i = S.cur;
+    // iPhones only let audio start from a tap, so start the recording muted now and
+    // unmute it once the original sentence has played.
+    const primed = new Audio(S.recordings.get(key(u)));
+    primed.muted = true;
+    primed.play().then(() => { primed.pause(); primed.currentTime = 0; }).catch(() => {});
+    playUnit(i, true);
+    S.oneShot = () => { rec.compareTimer = setTimeout(() => playMine(i, primed), 250); };
+    recStatus('원본 재생 중 → 이어서 내 녹음', 'ok');
+  }
+
+  // ---------- events ----------
+  function extractId(s) {
+    s = s.trim();
+    const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/);
+    if (m) return m[1];
+    return /^[\w-]{11}$/.test(s) ? s : null;
+  }
+  function switchVideo(id) {
+    S.videoId = id;
+    store.set('shadowing:video', id);
+    S.recordings.forEach((url) => URL.revokeObjectURL(url));
+    S.recordings.clear();
+    S.raw = ''; S.segs = []; S.chapters = []; S.units = []; S.chunks = []; S.cur = 0; S.phase = 'idle';
+    cancelGap(); stopMine();
+    const d = store.get(dataKey(), null);
+    S.starred = new Set((d && d.starred) || []);
+    if (playerReady) player.cueVideoById(id);
+    $('#videoTitle').textContent = '';
+    if (d && d.raw) { S.cur = d.cur || 0; applyRaw(d.raw); }
+    else { renderList(); renderPrompter(); renderStats(); }
+  }
+
+  function bind() {
+    $('#playBtn').addEventListener('click', togglePlay);
+    $('#prevBtn').addEventListener('click', () => go(-1));
+    $('#nextBtn').addEventListener('click', () => go(1));
+    $('#starCur').addEventListener('click', () => toggleStar(S.cur));
+    $('#recBtn').addEventListener('click', toggleRecord);
+    $('#mineBtn').addEventListener('click', () => playMine(S.cur));
+    $('#compareBtn').addEventListener('click', compare);
+    $('#pCur').addEventListener('click', (e) => { if (settings.blind) e.currentTarget.classList.toggle('revealed'); });
+    $('#openImport').addEventListener('click', () => showView('import'));
+    $('#openShare').addEventListener('click', openShare);
+    $('#copyShare').addEventListener('click', copyShare);
+    $('#closeShare').addEventListener('click', () => { $('#sharePanel').hidden = true; });
+    $('#cancelImport').addEventListener('click', () => showView('list'));
+
+    $$('.seg[data-setting]').forEach((g) => g.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      setSetting(g.dataset.setting, g.dataset.type === 'num' ? Number(b.dataset.value) : b.dataset.value);
+    }));
+    ['autoNext', 'chunkLoop', 'blind', 'starOnly'].forEach((n) => {
+      $('#' + n).addEventListener('change', (e) => setSetting(n, e.target.checked));
+    });
+
+    $('#rows').addEventListener('click', (e) => {
+      const chunkBtn = e.target.closest('[data-act="chunk"]');
+      if (chunkBtn) { setSetting('mode', 'flow'); jumpTo(S.chunks[+chunkBtn.dataset.chunk].from); return; }
+      const row = e.target.closest('.row');
+      if (!row) return;
+      const i = +row.dataset.i;
+      if (e.target.closest('[data-act="star"]')) { toggleStar(i); return; }
+      if (String(window.getSelection ? window.getSelection() : '').length > 0) return;
+      jumpTo(i);
+    });
+    const body = $('#ledgerBody');
+    ['wheel', 'touchmove'].forEach((ev) => body.addEventListener(ev, () => { S.userScrolledAt = performance.now(); }, { passive: true }));
+
+    $('#videoUrl').addEventListener('input', (e) => {
+      const id = extractId(e.target.value);
+      if (id) $('#ytLink').href = 'https://www.youtube.com/watch?v=' + id;
+      if (id && id !== S.videoId && $('#rawInput').value === S.raw) $('#rawInput').value = '';
+    });
+    $('#importView').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const id = extractId($('#videoUrl').value);
+      if (!id) { importMsg('영상 주소를 확인해 주세요. 예: https://www.youtube.com/watch?v=iFQsenYnVt0', true); return; }
+      const raw = $('#rawInput').value.trim();
+      if (id !== S.videoId) {
+        switchVideo(id);
+        if (!raw) {
+          if (S.units.length) showView('list');
+          else importMsg('이 영상의 스크립트를 붙여넣어 주세요.', true);
+          return;
+        }
+      }
+      if (!raw) { importMsg('스크립트를 붙여넣어 주세요.', true); return; }
+      if (!applyRaw(raw)) {
+        importMsg('시간 표시(예: 0:19)를 찾지 못했습니다. 스크립트 패널의 ⋮ 메뉴에서 타임스탬프 전환으로 시간을 켜고 다시 복사해 주세요.', true);
+        return;
+      }
+      showView('list');
+    });
+
+    // Mouse clicks shouldn't leave focus on a control, so Space keeps meaning play/pause.
+    document.addEventListener('click', (e) => {
+      if (e.detail === 0) return;
+      setTimeout(() => {
+        const a = document.activeElement;
+        if (a && a.matches && a.matches('button, input[type="checkbox"], summary')) a.blur();
+      }, 0);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t.matches && t.matches('textarea, input:not([type="checkbox"]), [contenteditable="true"]')) return;
+      const onControl = t.matches && t.matches('button, a, summary, input[type="checkbox"]');
+      switch (e.code) {
+        case 'Space': if (onControl) return; e.preventDefault(); togglePlay(); break;
+        case 'ArrowLeft': e.preventDefault(); go(-1); break;
+        case 'ArrowRight': e.preventDefault(); go(1); break;
+        case 'BracketLeft': stepRate(-1); break;
+        case 'BracketRight': stepRate(1); break;
+        case 'KeyM': setSetting('mode', settings.mode === 'sentence' ? 'flow' : 'sentence'); break;
+        case 'KeyH': setSetting('blind', !settings.blind); break;
+        case 'KeyS': toggleStar(S.cur); break;
+        case 'KeyR': if (!e.repeat) toggleRecord(); break;
+        case 'KeyC': compare(); break;
+        default: return;
+      }
+    });
+    window.addEventListener('blur', () => setTimeout(() => {
+      const a = document.activeElement;
+      $('#focusNote').hidden = !(a && a.tagName === 'IFRAME');
+    }, 0));
+    window.addEventListener('focus', () => { $('#focusNote').hidden = true; });
+  }
+
+  // ---------- send to phone ----------
+  // Browser storage is per device, so the transcript travels inside a link: #s=<deflated JSON>.
+  function toB64url(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function fromB64url(s) {
+    const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64 + '='.repeat((4 - b64.length % 4) % 4));
+    return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  }
+  async function packShare(obj) {
+    const stream = new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream('deflate'));
+    return toB64url(new Uint8Array(await new Response(stream).arrayBuffer()));
+  }
+  async function unpackShare(code) {
+    const stream = new Blob([fromB64url(code)]).stream().pipeThrough(new DecompressionStream('deflate'));
+    return JSON.parse(await new Response(stream).text());
+  }
+  const isLocalHost = () => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  function shareBase() {
+    return isLocalHost() && PUBLIC_URL ? PUBLIC_URL : location.origin + location.pathname;
+  }
+  function shareMsg(text, isErr) {
+    const m = $('#shareMsg');
+    m.textContent = text;
+    m.classList.toggle('err', !!isErr);
+  }
+  async function openShare() {
+    if (!S.units.length) return;
+    $('#sharePanel').hidden = false;
+    $('#shareLink').value = '';
+    shareMsg('링크를 만드는 중…');
+    try {
+      const code = await packShare({ v: S.videoId, raw: S.raw, st: Array.from(S.starred) });
+      $('#shareLink').value = shareBase() + '#s=' + code;
+      if (isLocalHost() && !PUBLIC_URL) shareMsg('지금 주소는 이 PC에서만 열립니다. GitHub Pages 주소에서 다시 만들어 주세요.', true);
+      else shareMsg('복사한 뒤 카톡 나와의 채팅이나 메일로 자신에게 보내세요.');
+    } catch (e) {
+      shareMsg('링크를 만들지 못했습니다. 최신 크롬이나 엣지에서 다시 시도해 주세요.', true);
+    }
+  }
+  function copyShare() {
+    const input = $('#shareLink');
+    if (!input.value) return;
+    const done = () => shareMsg('복사했습니다. 휴대폰으로 보내서 열어 보세요.');
+    const fallback = () => {
+      input.focus(); input.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      if (ok) done(); else shareMsg('링크 칸을 길게 눌러 직접 복사해 주세요.', true);
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(input.value).then(done, fallback);
+    else fallback();
+  }
+  async function readSharedLink() {
+    const m = location.hash.match(/^#s=([\w-]+)$/);
+    if (!m) return null;
+    history.replaceState(null, '', location.pathname + location.search);
+    try {
+      const d = await unpackShare(m[1]);
+      return d && typeof d.raw === 'string' ? d : 'bad';
+    } catch (e) {
+      return 'bad';
+    }
+  }
+  function notice(text, isErr) {
+    const n = $('#notice');
+    n.textContent = text;
+    n.classList.toggle('err', !!isErr);
+    n.hidden = false;
+    clearTimeout(notice.timer);
+    notice.timer = setTimeout(() => { n.hidden = true; }, 8000);
+  }
+
+  async function init() {
+    bind();
+    renderSettings();
+    renderPlayBtn();
+    if (location.protocol === 'file:') $('#fileWarn').hidden = false;
+    if (window.matchMedia('(pointer: coarse)').matches) $('#tapHint').hidden = false;
+    const shared = await readSharedLink();
+    const good = shared && shared !== 'bad';
+    if (good && extractId(String(shared.v || ''))) { S.videoId = extractId(String(shared.v)); store.set('shadowing:video', S.videoId); }
+    const d = store.get(dataKey(), null);
+    if (d) { S.starred = new Set(d.starred || []); S.cur = d.cur || 0; }
+    let ok = false;
+    if (good) {
+      if (!d || shared.raw !== d.raw) S.cur = 0;
+      if (Array.isArray(shared.st)) S.starred = new Set(shared.st);
+      ok = applyRaw(shared.raw);
+      notice(ok ? `받은 스크립트를 불러왔습니다. 문장 ${S.units.length}개` : '받은 링크에서 스크립트를 읽지 못했습니다.', !ok);
+    } else if (shared === 'bad') {
+      notice('링크가 잘려서 스크립트를 읽지 못했습니다. 링크 전체를 다시 보내 주세요.', true);
+    }
+    if (!ok && d && d.raw) ok = applyRaw(d.raw);
+    if (!ok) renderPrompter();
+    showView(ok ? 'list' : 'import');
+    loadYouTube();
+    setInterval(tick, 40);
+  }
+
+  window.__shadowing = { parseTranscript, buildUnits, buildChunks, packShare, unpackShare, S, settings };
+  init();
+})();
+</script>
+</body>
+</html>
