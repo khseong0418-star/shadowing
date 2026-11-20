@@ -630,11 +630,13 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
         ? await client.beta.messages.create(Object.assign({ betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }, params))
         : await client.messages.create(params);
     } catch (e) {
-      if (isA(e, "AuthenticationError") || isA(e, "PermissionDeniedError")) throw { code: "bad_key", message: e.message };
-      if (isA(e, "RateLimitError")) throw { code: "rate_limited", message: e.message };
-      if (isA(e, "BadRequestError")) throw { code: "bad_request", message: e.message };
-      if (isA(e, "APIConnectionError")) throw { code: "network", message: e.message };
-      throw { code: "upstream_error", message: (e && e.message) || String(e) };
+      // the API's own explanation from the parsed error body (e.g. a credit balance that is too low)
+      const detail = (e && e.apiMessage) || (e && e.error && e.error.error && e.error.error.message) || (e && e.message) || String(e);
+      if (isA(e, "AuthenticationError") || isA(e, "PermissionDeniedError")) throw { code: "bad_key", message: detail };
+      if (isA(e, "RateLimitError")) throw { code: "rate_limited", message: detail };
+      if (isA(e, "BadRequestError")) throw { code: "bad_request", message: detail };
+      if (isA(e, "APIConnectionError")) throw { code: "network", message: detail };
+      throw { code: "upstream_error", message: detail };
     }
     if (resp.stop_reason === "refusal") throw { code: "refused", message: "declined" };
     const block = (resp.content || []).find(b => b.type === "text");
@@ -1253,6 +1255,7 @@ function main(CARDS) {
       out.textContent = code === "bad_key" ? "API 키가 올바르지 않아요. 설정에서 키를 확인해 주세요."
         : code === "rate_limited" ? "AI 채점 요청이 많아요. 잠시 뒤 다시 채점해 주세요."
         : code === "network" ? "인터넷에 연결되지 않아 AI 채점을 못 했어요."
+        : code === "bad_request" ? "API가 채점 요청을 거절했어요: “" + ((e && e.message) || "") + "”"
         : "AI 채점에 실패했어요.";
       if (code !== "bad_key") { btn.hidden = false; btn.textContent = "다시 채점"; }
     });
@@ -1386,6 +1389,7 @@ function main(CARDS) {
       catch (err) {
         const code = err && err.code;
         if (code === "bad_key") { A.clearKey(); refreshAI(); renderAI("이 키로는 연결되지 않았어요. 키를 다시 확인해 주세요."); }
+        else if (code === "bad_request") { refreshAI(); renderAI("키는 저장했지만 API가 요청을 거절했어요: “" + ((err && err.message) || "") + "” 크레딧이 아직 들어오지 않았다면 잠시 뒤 키를 다시 저장해 보세요."); }
         else { refreshAI(); renderAI("키는 저장했지만 지금은 확인하지 못했어요(" + (code === "network" ? "인터넷 연결" : "일시적인 오류") + "). 채점할 때 다시 시도해요."); }
       }
     });
