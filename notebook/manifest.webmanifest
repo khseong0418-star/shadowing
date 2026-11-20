@@ -1,0 +1,31 @@
+{
+ "id": "./",
+ "name": "말하기 교정 노트",
+ "short_name": "교정 노트",
+ "description": "UPhone 수업에서 틀렸던 문장을 소리 내어 외우는 연습장",
+ "lang": "ko",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "portrait",
+ "background_color": "#F3F5F8",
+ "theme_color": "#F3F5F8",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}
