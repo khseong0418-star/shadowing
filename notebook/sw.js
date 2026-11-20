@@ -1,7 +1,7 @@
 /* Service worker for the installed 말하기 교정 노트 app.
    App files: network first (updates show up when online), cache fallback (works offline).
    Google Fonts: cache first. */
-const CACHE = "notebook-b1af9fc960";
+const CACHE = "notebook-4399b3f234";
 const SHELL = ["./", "./index.html", "./cards.bin", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 const SCOPE = new URL(self.registration.scope).pathname;
 
@@ -28,7 +28,7 @@ self.addEventListener("fetch", e => {
         return res;
       }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || (req.mode === "navigate" ? caches.match("./index.html") : undefined)))
     );
-  } else if (u.hostname === "fonts.googleapis.com" || u.hostname === "fonts.gstatic.com") {
+  } else if (u.hostname === "fonts.googleapis.com" || u.hostname === "fonts.gstatic.com" || (u.hostname === "cdn.jsdelivr.net" && u.pathname.startsWith("/npm/@anthropic-ai/sdk@"))) {
     e.respondWith(
       caches.match(req).then(r => r || fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; }))
     );

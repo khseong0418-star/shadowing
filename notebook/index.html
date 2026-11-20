@@ -285,6 +285,16 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
       <div class="set-row"><span>연습할 카드 종류</span><div class="seg" id="setDecks"></div></div>
       <div class="set-row"><span>읽어주기 속도</span><div class="seg" id="setRate"></div></div>
       <div class="set-row"><span>이 화면에서 쓸 수 있는 기능</span><div class="caps" id="caps"></div></div>
+      <div class="set-row" id="aiRow" hidden>
+        <span>AI 채점 (선택): 모범 답안과 달라도 뜻이 같고 자연스러우면 정답 처리</span>
+        <form class="type-row" id="aiKeyForm" autocomplete="off">
+          <input id="aiKeyInput" type="password" placeholder="Anthropic API 키 (sk-ant-…)" aria-label="Anthropic API 키" autocomplete="off" spellcheck="false">
+          <button class="btn" type="submit">저장</button>
+        </form>
+        <div class="seg" id="aiModelSeg"></div>
+        <p class="hint" id="aiStatus"></p>
+        <button class="link" type="button" id="aiClear" hidden>저장한 키 지우기</button>
+      </div>
       <div class="set-row" id="backupRow" hidden>
         <span>백업 (기록이 이 폰에만 저장되니 가끔 파일로 저장해 두세요)</span>
         <div class="seg">
@@ -348,8 +358,9 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
         <div class="r-row" id="rSaidRow"><span class="lbl">수업 때 실제로 한 말</span><p class="said" id="rSaid"></p></div>
         <p class="note" id="rNote"></p>
         <div class="r-row" id="aiBox" hidden>
-          <button class="btn" type="button" id="aiBtn">AI에게 내 답 확인받기</button>
+          <span class="lbl">AI 채점</span>
           <div class="ai-out" id="aiOut"></div>
+          <button class="btn" type="button" id="aiBtn" hidden>다시 채점</button>
         </div>
         <div class="grades" id="grades">
           <button type="button" data-g="1">다시<small id="g1"></small></button>
@@ -578,9 +589,74 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
     deferred = null; ib.hidden = true;
   });
 
+  /* AI grading with the learner's own Anthropic API key (optional).
+     Official TypeScript SDK loaded from a pinned CDN build; called straight from the phone's browser. */
+  const AI_KEY_LS = "speaking-notebook-api-key", AI_MODEL_LS = "speaking-notebook-ai-model";
+  const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.6.0/+esm";
+  const MODELS = [["claude-opus-5-5", "Opus 5.5 · 정확"], ["claude-haiku-5-5", "Haiku 5.5 · 빠르고 저렴"]];
+  const JUDGE_SCHEMA = {
+    type: "object",
+    properties: {
+      verdict: { type: "string", enum: ["correct", "minor", "wrong"] },
+      better: { type: "string" },
+      why: { type: "string" },
+      pattern_used: { type: "boolean" }
+    },
+    required: ["verdict", "better", "why", "pattern_used"],
+    additionalProperties: false
+  };
+  const lsGet = k => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } };
+  const lsSet = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} };
+  const aiModel = () => { const m = lsGet(AI_MODEL_LS); return MODELS.some(x => x[0] === m) ? m : MODELS[0][0]; };
+  let sdkPromise = null;
+  const loadSDK = () => sdkPromise || (sdkPromise = import(SDK_URL).then(m => m.default || m.Anthropic).catch(e => { sdkPromise = null; throw e; }));
+
+  async function callClaude(prompt) {
+    let Anthropic;
+    try { Anthropic = await loadSDK(); } catch (e) { throw { code: "network", message: "could not load the Anthropic SDK" }; }
+    const isA = (e, name) => typeof Anthropic[name] === "function" && e instanceof Anthropic[name];
+    const client = new Anthropic({ apiKey: lsGet(AI_KEY_LS), dangerouslyAllowBrowser: true, maxRetries: 1, timeout: 60000 });
+    const model = aiModel();
+    const params = {
+      model,
+      max_tokens: 2000,
+      output_config: { effort: "low", format: { type: "json_schema", schema: JUDGE_SCHEMA } },
+      messages: [{ role: "user", content: prompt }]
+    };
+    let resp;
+    try {
+      // Opus 5.5: opt into server-side refusal fallback. Haiku 5.5 has no server-side fallback.
+      resp = model === "claude-opus-5-5"
+        ? await client.beta.messages.create(Object.assign({ betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }, params))
+        : await client.messages.create(params);
+    } catch (e) {
+      if (isA(e, "AuthenticationError") || isA(e, "PermissionDeniedError")) throw { code: "bad_key", message: e.message };
+      if (isA(e, "RateLimitError")) throw { code: "rate_limited", message: e.message };
+      if (isA(e, "BadRequestError")) throw { code: "bad_request", message: e.message };
+      if (isA(e, "APIConnectionError")) throw { code: "network", message: e.message };
+      throw { code: "upstream_error", message: (e && e.message) || String(e) };
+    }
+    if (resp.stop_reason === "refusal") throw { code: "refused", message: "declined" };
+    const block = (resp.content || []).find(b => b.type === "text");
+    if (!block) throw { code: "upstream_error", message: "no text block (stop_reason " + resp.stop_reason + ")" };
+    try { return JSON.parse(block.text); } catch (e) { throw { code: "invalid_json", message: block.text.slice(0, 200) }; }
+  }
+  const aiShim = { json: prompt => callClaude(prompt) };
+  const ai = {
+    models: MODELS,
+    model: aiModel,
+    setModel: m => lsSet(AI_MODEL_LS, m),
+    hasKey: () => !!lsGet(AI_KEY_LS),
+    keyTail: () => lsGet(AI_KEY_LS).slice(-4),
+    setKey: k => lsSet(AI_KEY_LS, k),
+    clearKey: () => lsSet(AI_KEY_LS, ""),
+    check: () => callClaude("This is a connection check for a grading app. Grade the learner's answer \"The weather is nice today.\" against the model answer \"It's a nice day today.\" Reply with the JSON fields verdict, better, why (Korean), pattern_used.")
+  };
+
   window.PLAT = {
     kind: "web",
-    use: name => Promise.resolve(name === "dictation" ? dict : null),
+    ai,
+    use: name => Promise.resolve(name === "dictation" ? dict : name === "sample" ? (ai.hasKey() ? aiShim : null) : null),
     hot: null,
     offlineReady: () => swReady || !!(navigator.serviceWorker && navigator.serviceWorker.controller),
     loadCards,
@@ -795,7 +871,7 @@ function main(CARDS) {
     renderCaps(); renderMicAvail();
   });
   use("tts").then(t => { CAP.tts = t || null; renderCaps(); renderSpeakAvail(); });
-  use("sample").then(s => { CAP.ai = s || null; renderCaps(); });
+  use("sample").then(s => { CAP.ai = s || null; renderCaps(); });   // refreshAI() repeats this when the AI key changes
   use("db").then(db => { CAP.dbTried = true; if (db) syncFromDb(db); else renderCaps(); });
 
   let ttsOff = false;
@@ -919,7 +995,7 @@ function main(CARDS) {
   function renderCaps() {
     const el = $("#caps"); if (!el) return; el.textContent = "";
     const items = [["음성 입력", !!CAP.dict], ["읽어주기", canSpeak()]];
-    if (PLAT.kind === "web") items.push(["오프라인 사용", PLAT.offlineReady()], ["기록은 이 폰에 저장", true]);
+    if (PLAT.kind === "web") items.push(["AI 채점", !!CAP.ai], ["오프라인 사용", PLAT.offlineReady()], ["기록은 이 폰에 저장", true]);
     else items.push(["AI 확인", !!CAP.ai], [CAP.synced ? "기기 간 동기화" : (CAP.dbTried && !CAP.db ? "이 기기에만 저장" : "동기화 확인 중"), CAP.synced]);
     for (const [t, on] of items) { const s = document.createElement("span"); s.className = "cap" + (on ? " on" : ""); s.textContent = (on ? "✓ " : "") + t; el.append(s); }
   }
@@ -966,7 +1042,7 @@ function main(CARDS) {
     $("#progFill").style.width = Math.round(100 * S.done / Math.max(1, S.total)) + "%";
     $("#progText").textContent = Math.min(S.done + 1, S.total) + " / " + S.total;
     $("#reveal").hidden = true; $("#answerZone").hidden = false; $("#typeInput").value = ""; renderLive();
-    $("#cInitials").hidden = true; $("#aiOut").textContent = ""; $("#aiBtn").disabled = false;
+    $("#cInitials").hidden = true; $("#aiOut").textContent = ""; $("#aiBtn").hidden = true; $("#aiBox").hidden = true; judgeSeq++;
     const isPron = c.type === "pron", isVocab = c.type === "vocab";
     $("#cPrompt").hidden = isPron; $("#cPron").hidden = !isPron; $("#hintBtn").hidden = isPron;
     const prog = ST.prog[c.id];
@@ -1059,9 +1135,9 @@ function main(CARDS) {
       const r = said ? grade(c, said) : null; sug = r ? r.sug : 1; lastResult = { said, sim: r ? Math.round(r.best.sim * 100) / 100 : 0 };
       if (!said) chip("정답 확인");
       else {
-        if (r.keyTotal) chip("핵심 표현 " + r.keyHit + "/" + r.keyTotal, r.keyHit === r.keyTotal ? "good" : r.keyHit ? "mid" : "bad");
-        chip("문장 일치 " + Math.round(r.best.sim * 100) + "%", r.best.sim >= 0.8 ? "good" : r.best.sim >= 0.6 ? "mid" : "bad");
-        if (!r.best.isMain) chip("다른 표현과 일치", "good");
+        if (r.keyTotal) chip("모범 답안 핵심 표현 " + r.keyHit + "/" + r.keyTotal, r.keyHit === r.keyTotal ? "good" : r.keyHit ? "mid" : "");
+        chip("모범 답안과 일치 " + Math.round(r.best.sim * 100) + "%", r.best.sim >= 0.8 ? "good" : r.best.sim >= 0.6 ? "mid" : "");
+        if (!r.best.isMain && r.best.sim >= 0.8) chip("다른 표현과 일치", "good");
       }
       renderTarget(c);
       const alts = c.alts || []; $("#rAltsRow").hidden = !alts.length; const ul = $("#rAlts"); ul.textContent = ""; alts.forEach(a => { const li = document.createElement("li"); li.textContent = a; ul.append(li); });
@@ -1075,7 +1151,14 @@ function main(CARDS) {
         $("#rSaidRow").hidden = !c.said; $("#rSaid").textContent = c.said ? "“" + c.said + "”" : "";
       }
       $("#rNote").textContent = c.note || ""; $("#rNote").hidden = !c.note;
-      $("#aiBox").hidden = !(CAP.ai && said);
+      // Near-identical to a model answer: correct without asking AI. Otherwise let AI judge meaning, grammar and naturalness.
+      const exact = !!r && r.keyHit === r.keyTotal && r.best.sim >= 0.9;
+      if (exact) { chip("정답", "good"); sug = 3; }
+      else if (said && CAP.ai) startJudge(c, said);
+      else if (said && PLAT.kind === "web") {
+        $("#aiBox").hidden = false; $("#aiBtn").hidden = true;
+        $("#aiOut").textContent = "모범 답안과 다르게 말했어도 뜻이 같고 자연스러우면 맞은 거예요. 설정에서 AI 채점을 켜면 자동으로 판단해 줘요.";
+      }
     }
     const p = ST.prog[c.id], now = Date.now();
     for (let g = 1; g <= 4; g++) { $("#g" + g).textContent = fmtIvl(nextState(p, g, now)); const b = document.querySelector('.grades button[data-g="' + g + '"]'); b.classList.toggle("suggest", g === sug); }
@@ -1102,7 +1185,7 @@ function main(CARDS) {
     const np = nextState(ST.prog[c.id], g, now); if (ST.prog[c.id] && ST.prog[c.id].susp) np.susp = true;
     ST.prog[c.id] = np;
     d.reviews += 1; if (g === 1) d.again += 1; if (wasNew) d.newDone += 1;
-    d.attempts.push({ c: c.id, g, s: lastResult ? lastResult.sim : 0, a: (lastResult && lastResult.said || "").slice(0, 160), t: now });
+    d.attempts.push(Object.assign({ c: c.id, g, s: lastResult ? lastResult.sim : 0, a: (lastResult && lastResult.said || "").slice(0, 160), t: now }, lastResult && lastResult.ai ? { ai: lastResult.ai } : {}));
     if (d.attempts.length > 400) d.attempts.splice(0, d.attempts.length - 400);
     persistCard(c.id); persistDay(k);
     S.done += 1;
@@ -1121,35 +1204,61 @@ function main(CARDS) {
   $("#homeBtn").addEventListener("click", () => { S = null; show("today"); });
   $("#exitBtn").addEventListener("click", () => { if (CAP.dict && CAP.dict.active()) { checkPending = false; CAP.dict.stop().catch(() => {}); } S = null; show("today"); });
 
-  // ---------- AI check ----------
-  $("#aiBtn").addEventListener("click", async () => {
-    const c = cur(); if (!c || !CAP.ai || !lastResult || !lastResult.said) return;
-    const btn = $("#aiBtn"), out = $("#aiOut"); btn.disabled = true; out.textContent = "확인하는 중…";
-    const prompt = "You are an English speaking coach for a Korean learner (around CEFR B1) practicing everyday and job-interview English.\n"
-      + (c.q ? "Question he was answering: " + c.q + "\n" : "")
-      + "What he wanted to say (Korean): " + c.ko + "\n"
-      + "Model answer: " + c.en + "\n"
-      + ((c.alts && c.alts.length) ? "Other acceptable answers: " + c.alts.join(" | ") + "\n" : "")
-      + "What he said (from speech-to-text, so ignore capitalization, punctuation and obvious transcription slips): \"" + lastResult.said + "\"\n\n"
-      + "Decide whether his sentence is natural, grammatical English that says the same thing. It does not need to match the model answer word for word.\n"
-      + "Reply with only JSON: {\"verdict\": \"good\" | \"minor\" | \"wrong\", \"better\": \"his sentence with the smallest fix needed (same as his if good)\", \"why\": \"one short sentence in Korean explaining the fix or confirming it is fine\"}";
-    try {
-      const r = await CAP.ai.json(prompt, { modelTier: "quick" });
-      out.textContent = "";
-      const v = String(r && r.verdict || "");
-      const chip = document.createElement("span"); chip.className = "chip " + (v === "good" ? "good" : v === "minor" ? "mid" : "bad");
-      chip.textContent = v === "good" ? "자연스러워요" : v === "minor" ? "조금만 고치면 돼요" : "고쳐야 해요";
-      const row = document.createElement("div"); row.append(chip);
-      out.append(row);
-      if (r && r.better && v !== "good") { const p = document.createElement("p"); p.className = "en"; p.style.margin = "0"; p.textContent = String(r.better); out.append(p); }
-      if (r && r.why) { const p = document.createElement("p"); p.style.margin = "0"; p.textContent = String(r.why); out.append(p); }
-    } catch (e) {
+  // ---------- AI grading: same meaning + grammatical + natural counts as correct ----------
+  let judgeSeq = 0;
+  function judgePrompt(c, said) {
+    return [
+      "You are grading a spoken answer in an English speaking-practice app. The learner is a Korean speaker at about CEFR B1.",
+      "The learner saw what to say in Korean and said it in English.",
+      c.q ? "Question being answered: " + c.q : "",
+      "Intended meaning (Korean): " + c.ko,
+      "Model answer: " + c.en,
+      (c.alts && c.alts.length) ? "Other acceptable answers: " + c.alts.join(" | ") : "",
+      c.type === "struct" ? "Pattern this card practices: " + c.frame + (c.frame_ko ? " (" + c.frame_ko + ")" : "") : "",
+      "Learner's answer (speech-to-text output, so ignore capitalization, punctuation and obvious transcription slips): \"" + said + "\"",
+      "",
+      "Grade the learner's answer:",
+      "- correct: it says the same thing as the intended meaning, is grammatical, and sounds natural in spoken English. It does not need to use the model answer's words; a different natural phrasing is correct.",
+      "- minor: the meaning comes through, but there is one small grammar or word-choice slip, or it sounds slightly unnatural.",
+      "- wrong: the meaning is different or important information is missing, or there are clear grammar errors.",
+      "Reply with only a JSON object with these fields:",
+      "verdict: \"correct\", \"minor\" or \"wrong\";",
+      "better: the learner's own sentence with the smallest fix needed (unchanged if correct);",
+      "why: one short sentence in Korean that explains the fix, or says why it is fine;",
+      "pattern_used: true if the learner used the practiced pattern, or if no pattern is being practiced."
+    ].filter(Boolean).join("\n");
+  }
+  function addChip(text, cls) { const s = document.createElement("span"); s.className = "chip " + (cls || ""); s.textContent = text; $("#verdict").append(s); return s; }
+  function setSuggest(g) { document.querySelectorAll(".grades button").forEach(b => b.classList.toggle("suggest", +b.dataset.g === g)); }
+  function startJudge(c, said) {
+    const seq = ++judgeSeq, out = $("#aiOut"), btn = $("#aiBtn");
+    $("#aiBox").hidden = false; btn.hidden = true; out.textContent = "";
+    const pending = addChip("AI 채점 중…", "");
+    const opts = PLAT.kind === "claude" ? { modelTier: "quick" } : undefined;
+    Promise.resolve().then(() => CAP.ai.json(judgePrompt(c, said), opts)).then(res => {
+      if (seq !== judgeSeq || cur() !== c || $("#reveal").hidden) return;
+      pending.remove();
+      const v = String(res && res.verdict || "");
+      addChip(v === "correct" ? "AI: 뜻이 같고 자연스러워요 · 정답" : v === "minor" ? "AI: 거의 맞아요" : "AI: 고쳐야 해요", v === "correct" ? "good" : v === "minor" ? "mid" : "bad");
+      if (c.type === "struct" && res && res.pattern_used === false) addChip("연습 구조는 안 썼어요", "mid");
+      setSuggest(v === "correct" ? 3 : v === "minor" ? 2 : 1);
+      if (lastResult) lastResult.ai = v;
+      if (res && res.better && v !== "correct") { const p = document.createElement("p"); p.className = "en"; p.style.margin = "0"; p.textContent = String(res.better); out.append(p); }
+      if (res && res.why) { const p = document.createElement("p"); p.style.margin = "0"; p.textContent = String(res.why); out.append(p); }
+    }).catch(e => {
+      if (seq !== judgeSeq || cur() !== c) return;
+      pending.remove();
       const code = e && e.code;
-      if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared" || code === "capability_disabled" || code === "capability_removed") { CAP.ai = null; $("#aiBox").hidden = true; renderCaps(); }
-      else out.textContent = code === "rate_limited" ? "요청이 많아요. 잠시 뒤에 다시 눌러 주세요." : "확인하지 못했어요. 다시 눌러 주세요.";
-      btn.disabled = false;
-    }
-  });
+      if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(code)) { CAP.ai = null; $("#aiBox").hidden = true; renderCaps(); return; }
+      out.textContent = code === "bad_key" ? "API 키가 올바르지 않아요. 설정에서 키를 확인해 주세요."
+        : code === "rate_limited" ? "AI 채점 요청이 많아요. 잠시 뒤 다시 채점해 주세요."
+        : code === "network" ? "인터넷에 연결되지 않아 AI 채점을 못 했어요."
+        : "AI 채점에 실패했어요.";
+      if (code !== "bad_key") { btn.hidden = false; btn.textContent = "다시 채점"; }
+    });
+  }
+  $("#aiBtn").addEventListener("click", () => { const c = cur(); if (c && CAP.ai && lastResult && lastResult.said) { [...$("#verdict").children].forEach(x => { if (/^AI/.test(x.textContent)) x.remove(); }); startJudge(c, lastResult.said); } });
+  function refreshAI() { use("sample").then(s => { CAP.ai = s || null; renderCaps(); }); }
 
   // ---------- list ----------
   let LF = { type: "all", tag: "all", q: "" }, openId = null;
@@ -1248,6 +1357,40 @@ function main(CARDS) {
     const worst = CARDS.filter(c => ST.prog[c.id] && ST.prog[c.id].lapses > 0).sort((a, b) => ST.prog[b.id].lapses - ST.prog[a.id].lapses).slice(0, 6);
     if (!worst.length) { const li = document.createElement("li"); li.className = "hint"; li.textContent = "‘다시’를 누른 카드가 여기에 모여요."; ms.append(li); }
     for (const c of worst) { const li = document.createElement("li"); const e = document.createElement("span"); e.className = "en"; e.textContent = c.type === "pron" ? c.word : c.en; const n = document.createElement("span"); n.className = "n"; n.textContent = ST.prog[c.id].lapses + "번"; li.append(e, n); li.addEventListener("click", () => startSession({ ids: [c.id] })); li.style.cursor = "pointer"; ms.append(li); }
+  }
+
+  // ---------- AI grading settings (installed app only: the learner's own Anthropic API key) ----------
+  if (PLAT.kind === "web" && PLAT.ai) {
+    const A = PLAT.ai;
+    $("#aiRow").hidden = false;
+    const renderAI = msg => {
+      const key = A.hasKey();
+      $("#aiClear").hidden = !key;
+      $("#aiKeyInput").placeholder = key ? "저장됨 (…" + A.keyTail() + ") · 바꾸려면 새 키 입력" : "Anthropic API 키 (sk-ant-…)";
+      $("#aiStatus").textContent = msg || (key
+        ? "켜짐. 키는 이 폰에만 저장되고, 채점할 질문·모범 답안·내 답만 Anthropic API로 보내요. 채점 1회 비용은 대략 Opus 10원, Haiku 1원 미만이에요."
+        : "꺼짐. console.anthropic.com에서 API 키를 만들어 붙여 넣으면 켜져요. 키는 이 폰에만 저장돼요.");
+      const segEl = $("#aiModelSeg"); segEl.textContent = "";
+      for (const [m, label] of A.models) {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-pressed", String(A.model() === m));
+        b.addEventListener("click", () => { A.setModel(m); renderAI(); });
+        segEl.append(b);
+      }
+    };
+    $("#aiKeyForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const v = $("#aiKeyInput").value.trim(); if (!v) return;
+      A.setKey(v); $("#aiKeyInput").value = "";
+      renderAI("키를 확인하는 중…");
+      try { await A.check(); refreshAI(); renderAI("키 확인 완료. 이제 모범 답안과 다르게 말해도 AI가 뜻·문법·자연스러움을 판단해요."); }
+      catch (err) {
+        const code = err && err.code;
+        if (code === "bad_key") { A.clearKey(); refreshAI(); renderAI("이 키로는 연결되지 않았어요. 키를 다시 확인해 주세요."); }
+        else { refreshAI(); renderAI("키는 저장했지만 지금은 확인하지 못했어요(" + (code === "network" ? "인터넷 연결" : "일시적인 오류") + "). 채점할 때 다시 시도해요."); }
+      }
+    });
+    $("#aiClear").addEventListener("click", () => { A.clearKey(); refreshAI(); renderAI("키를 지웠어요. AI 채점이 꺼졌어요."); });
+    renderAI();
   }
 
   // ---------- backup (installed app only: progress lives on this phone) ----------
