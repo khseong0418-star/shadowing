@@ -119,6 +119,17 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; text-wrap: balance; }
 .q span { flex: 1; min-width: 0; }
 .ko { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.5; }
 .ko-label { font-size: 12px; color: var(--muted); font-weight: 400; display: block; margin-bottom: 2px; }
+.sub { display: flex; flex-direction: column; gap: 16px; }
+.frame { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 1px; }
+.frame .f-lbl { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: .04em; }
+.frame .f-en { font-size: 16px; font-weight: 600; color: var(--ink); }
+.frame .f-ko { font-size: 13px; color: var(--muted); }
+.vex { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.vex p { margin: 0; }
+.vex .en { font-size: 17px; line-height: 1.5; }
+.blank { display: inline-block; border-bottom: 2px solid var(--accent); line-height: 1.1; }
+.ipa { font-size: 14px; color: var(--muted); margin-left: 8px; font-family: var(--font-mono); }
+.ko-ex { font-family: var(--font-ui); font-size: 14px; color: var(--muted); }
 .initials { margin: 0; font-family: var(--font-mono); font-size: 14px; color: var(--muted); letter-spacing: .02em; overflow-wrap: anywhere; }
 
 .pron { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
@@ -256,6 +267,18 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
     <p class="hint">UPhone 수업 20회에서 반복된 오류 유형이에요. 누르면 그 유형만 10장 연습해요.</p>
     <div class="weak" id="weakList"></div>
 
+    <div class="sub" id="structSec" hidden>
+      <h2>문장 구조 연습</h2>
+      <p class="hint">실제로 쓰시는 표현을 바탕으로 만든 패턴이에요. 구조를 보고 예문을 말해 보세요.</p>
+      <div class="weak" id="structList"></div>
+    </div>
+
+    <div class="sub" id="vocabSec" hidden>
+      <h2>필수 단어</h2>
+      <p class="hint">뜻과 빈칸 예문을 보고 영어 단어를 말해 보세요. 예문 전체를 말해도 돼요.</p>
+      <div class="weak" id="vocabList"></div>
+    </div>
+
     <h2>설정</h2>
     <div class="settings">
       <div class="set-row"><span>하루 새 카드 수</span><div class="seg" id="setNew"></div></div>
@@ -288,7 +311,9 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
 
       <div class="prompt" id="cPrompt">
         <p class="q en" id="cQRow"><span id="cQ"></span><button class="speak" type="button" id="speakQ" aria-label="질문 듣기" title="질문 듣기"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg></button></p>
-        <p class="ko" id="cKoRow"><span class="ko-label">영어로 말해 보세요</span><span id="cKo"></span></p>
+        <p class="frame" id="cFrame" hidden><span class="f-lbl">구조</span><span class="f-en en" id="cFrameEn"></span><span class="f-ko" id="cFrameKo"></span></p>
+        <p class="ko" id="cKoRow"><span class="ko-label" id="cKoLabel">영어로 말해 보세요</span><span id="cKo"></span></p>
+        <div class="vex" id="cVex" hidden><p class="en" id="vEx"></p><p class="hint" id="vExKo"></p></div>
         <p class="initials" id="cInitials" hidden></p>
       </div>
 
@@ -546,10 +571,22 @@ function main(CARDS) {
     "missing-subject/verb": "주어·동사 빠짐",
     "pronunciation": "발음",
     "expression": "수업 표현",
+    "structure": "문장 구조",
+    "vocabulary": "필수 단어",
     "other": "기타"
   };
   const WEAK_ORDER = ["word-choice/collocation", "verb-tense", "article", "plural/countable", "preposition", "sentence-structure", "subject-verb-agreement", "pronunciation"];
-  const TYPES = { fix: "수업 교정", lesson: "수업 표현", drill: "패턴 드릴", pron: "발음" };
+  const TYPES = { fix: "수업 교정", lesson: "수업 표현", drill: "패턴 드릴", struct: "문장 구조", vocab: "필수 단어", pron: "발음" };
+  const plainEx = s => String(s || "").replace(/[\[\]]/g, "");
+  function renderBracket(el, ex, blank) {
+    const m = String(ex || "").match(/^(.*?)\[(.+?)\](.*)$/);
+    if (!m) { el.append(document.createTextNode(plainEx(ex))); return; }
+    el.append(document.createTextNode(m[1]));
+    const s = document.createElement(blank ? "span" : "mark");
+    if (blank) { s.className = "blank"; s.textContent = " ".repeat(Math.max(6, m[2].length)); s.setAttribute("aria-label", "빈칸"); }
+    else s.textContent = m[2];
+    el.append(s, document.createTextNode(m[3]));
+  }
   const KINDS = { "ih-ee": "짧은 ɪ / 긴 iː", "v-b": "v / b", "f-p": "f / p", "th": "th", "r-l": "r / l", "s-z": "s / z", "sh-s": "sh / s" };
 
   // ---------- state ----------
@@ -632,7 +669,7 @@ function main(CARDS) {
     return p;
   }
   function fmtIvl(p) { if (!p.ivl) return "10분"; if (p.ivl < 14) return p.ivl + "일"; if (p.ivl < 60) return Math.round(p.ivl / 7) + "주"; return Math.round(p.ivl / 30) + "달"; }
-  const enabled = c => !!ST.settings.decks[c.type];
+  const enabled = c => ST.settings.decks[c.type] !== false;   // card types added later default to on
   const isSusp = c => !!(ST.prog[c.id] && ST.prog[c.id].susp);
   function dueCards(now) { const end = startOfDay(now) + DAY; return CARDS.filter(c => enabled(c) && !isSusp(c) && ST.prog[c.id] && ST.prog[c.id].due != null && ST.prog[c.id].due < end).sort((a, b) => ST.prog[a.id].due - ST.prog[b.id].due); }
   function newLeft() { const d = ST.days[today()] || {}; return Math.max(0, ST.settings.newPerDay + (d.extraNew || 0) - (d.newDone || 0)); }
@@ -675,6 +712,14 @@ function main(CARDS) {
     let sug = 1;
     if (st.length) sug = keyAll && best.sim >= 0.8 ? 3 : (keyHit > 0 || best.sim >= 0.6) ? 2 : 1;
     return { best, keyHit, keyTotal: keys.length, sug, said };
+  }
+  function gradeVocab(card, said) {
+    const st = norm(said);
+    const forms = (card.forms && card.forms.length ? card.forms : [card.word]).map(norm).filter(f => f.length);
+    const hit = forms.some(f => containsSeq(st, f));
+    let sim = 0;
+    if (st.length >= 4) { const tt = norm(plainEx(card.ex)); sim = (2 * lcsDiff(tt, st).lcs) / Math.max(1, tt.length + st.length); }
+    return { hit, sim, sug: !st.length ? 1 : hit ? 3 : 1 };
   }
   function gradePron(card, said) {
     const st = norm(said);
@@ -790,7 +835,27 @@ function main(CARDS) {
       b.addEventListener("click", () => startSession({ tag }));
       wl.append(b);
     }
+    renderGroupList($("#structList"), $("#structSec"), "struct");
+    renderGroupList($("#vocabList"), $("#vocabSec"), "vocab");
     renderSettings();
+  }
+  function renderGroupList(el, sec, type) {
+    el.textContent = "";
+    const all = CARDS.filter(c => c.type === type);
+    sec.hidden = !all.length || ST.settings.decks[type] === false;
+    for (const g of [...new Set(all.map(c => c.group))]) {
+      const list = all.filter(c => c.group === g);
+      const mature = list.filter(c => ST.prog[c.id] && ST.prog[c.id].ivl >= 21).length;
+      const b = document.createElement("button"); b.type = "button";
+      const nm = document.createElement("span"); nm.className = "w-name"; nm.textContent = g;
+      const stt = document.createElement("span"); stt.className = "w-stat mono"; stt.textContent = list.length + "장 · 익힘 " + mature;
+      const exl = document.createElement("span"); exl.className = "w-ex";
+      exl.textContent = type === "struct" ? [...new Set(list.map(c => c.frame))].slice(0, 3).join("  ·  ") : list.slice(0, 5).map(c => c.word).join(", ");
+      const m = document.createElement("span"); m.className = "meter"; const mi = document.createElement("i"); mi.style.width = Math.round(100 * mature / list.length) + "%"; m.append(mi);
+      b.append(nm, stt, exl, m);
+      b.addEventListener("click", () => startSession({ group: g, gtype: type }));
+      el.append(b);
+    }
   }
   function seg(el, opts, cur, onPick) {
     el.textContent = "";
@@ -801,10 +866,10 @@ function main(CARDS) {
     }
   }
   function renderSettings() {
-    seg($("#setNew"), [[5, "5장"], [10, "10장"], [15, "15장"], [20, "20장"]], v => ST.settings.newPerDay === v, v => { ST.settings.newPerDay = v; });
-    seg($("#setDecks"), Object.entries(TYPES), v => !!ST.settings.decks[v], v => {
-      const d = Object.assign({}, ST.settings.decks); d[v] = !d[v];
-      if (!Object.values(d).some(Boolean)) return; ST.settings.decks = d;
+    seg($("#setNew"), [[5, "5장"], [10, "10장"], [15, "15장"], [20, "20장"], [30, "30장"]], v => ST.settings.newPerDay === v, v => { ST.settings.newPerDay = v; });
+    seg($("#setDecks"), Object.entries(TYPES), v => ST.settings.decks[v] !== false, v => {
+      const d = Object.assign({}, ST.settings.decks); d[v] = d[v] === false;
+      if (!Object.keys(TYPES).some(k => d[k] !== false)) return; ST.settings.decks = d;
     });
     seg($("#setRate"), [[0.8, "느리게"], [1, "보통"], [1.2, "빠르게"]], v => ST.settings.rate === v, v => { ST.settings.rate = v; });
     renderCaps();
@@ -831,8 +896,8 @@ function main(CARDS) {
     const now = Date.now();
     let q = [];
     if (opt.ids) q = opt.ids.slice();
-    else if (opt.tag) {
-      const pool = CARDS.filter(c => c.tag === opt.tag && !isSusp(c));
+    else if (opt.tag || opt.group) {
+      const pool = CARDS.filter(c => (opt.tag ? c.tag === opt.tag : (c.group === opt.group && c.type === opt.gtype)) && !isSusp(c));
       const due = pool.filter(c => ST.prog[c.id] && ST.prog[c.id].due < startOfDay(now) + DAY).sort((a, b) => ST.prog[a.id].due - ST.prog[b.id].due);
       const fresh = pool.filter(c => !ST.prog[c.id]).sort((a, b) => a.ord - b.ord);
       const rest = pool.filter(c => ST.prog[c.id] && !due.includes(c)).sort((a, b) => (ST.prog[a.id].ivl - ST.prog[b.id].ivl) || (ST.prog[b.id].lapses - ST.prog[a.id].lapses));
@@ -844,7 +909,7 @@ function main(CARDS) {
     }
     if (!q.length) { showNotice("연습할 카드가 없어요. 설정에서 카드 종류를 켜거나 새 카드를 더 해 보세요."); return; }
     hideNotice();
-    S = { queue: q, i: 0, total: q.length, done: 0, again: 0, label: opt.tag ? TAGS[opt.tag] : opt.ids ? "선택한 문장" : "오늘" };
+    S = { queue: q, i: 0, total: q.length, done: 0, again: 0, label: opt.tag ? TAGS[opt.tag] : opt.group ? opt.group : opt.ids ? "선택한 문장" : "오늘" };
     show("study"); $("#doneView").hidden = true; $("#card").hidden = false;
     renderCard();
   }
@@ -860,21 +925,28 @@ function main(CARDS) {
     $("#progText").textContent = Math.min(S.done + 1, S.total) + " / " + S.total;
     $("#reveal").hidden = true; $("#answerZone").hidden = false; $("#typeInput").value = ""; renderLive();
     $("#cInitials").hidden = true; $("#aiOut").textContent = ""; $("#aiBtn").disabled = false;
-    const isPron = c.type === "pron";
+    const isPron = c.type === "pron", isVocab = c.type === "vocab";
     $("#cPrompt").hidden = isPron; $("#cPron").hidden = !isPron; $("#hintBtn").hidden = isPron;
     const prog = ST.prog[c.id];
     const tagTxt = TAGS[c.tag] || "";
     const fresh = !prog ? " · 새 카드" : "";
     if (c.type === "fix" || c.type === "lesson") $("#cMeta").textContent = fmtDate(c.date) + (c.tutor ? " · " + c.tutor : "") + " · " + c.topic + " · " + tagTxt + fresh;
     else if (c.type === "drill") $("#cMeta").textContent = "패턴 드릴 · " + c.group + fresh;
+    else if (c.type === "struct") $("#cMeta").textContent = "문장 구조 · " + c.group + (c.use ? " · " + c.use : "") + fresh;
+    else if (isVocab) $("#cMeta").textContent = "필수 단어 · " + c.group + " · " + c.pos + (c.level ? " · " + c.level : "") + fresh;
     else $("#cMeta").textContent = "발음 · " + (KINDS[c.kind] || "") + fresh;
     if (isPron) {
       $("#pWord").textContent = c.word; $("#pPair").textContent = c.pair; $("#pEx").textContent = c.ex;
       $("#micLabel").textContent = "눌러서 단어 말하기";
     } else {
-      $("#cQRow").hidden = !c.q; $("#cQ").textContent = c.q || "";
+      $("#cQRow").hidden = !c.q || isVocab; $("#cQ").textContent = c.q || "";
+      $("#cKoLabel").textContent = isVocab ? "이 뜻의 영어 단어를 말해 보세요" : "영어로 말해 보세요";
       $("#cKo").textContent = c.ko;
-      $("#micLabel").textContent = "눌러서 말하기";
+      $("#cFrame").hidden = c.type !== "struct";
+      if (c.type === "struct") { $("#cFrameEn").textContent = c.frame || ""; $("#cFrameKo").textContent = c.frame_ko || ""; }
+      $("#cVex").hidden = !isVocab;
+      if (isVocab) { const v = $("#vEx"); v.textContent = ""; renderBracket(v, c.ex, true); $("#vExKo").textContent = c.ex_ko || ""; }
+      $("#micLabel").textContent = isVocab ? "눌러서 단어 말하기" : "눌러서 말하기";
     }
     renderMicAvail(); renderSpeakAvail();
   }
@@ -899,16 +971,17 @@ function main(CARDS) {
   });
   $("#typeForm").addEventListener("submit", e => { e.preventDefault(); const v = $("#typeInput").value.trim(); if (v) { if (CAP.dict && CAP.dict.active()) { checkPending = false; CAP.dict.stop().catch(() => {}); } submitAnswer(v); } });
   $("#revealBtn").addEventListener("click", () => { if (CAP.dict && CAP.dict.active()) { checkPending = false; CAP.dict.stop().catch(() => {}); } submitAnswer(""); });
-  $("#hintBtn").addEventListener("click", () => { const c = cur(); if (!c) return; const el = $("#cInitials"); el.textContent = initials(c.en); el.hidden = false; });
+  $("#hintBtn").addEventListener("click", () => { const c = cur(); if (!c) return; const el = $("#cInitials"); el.textContent = initials(c.type === "vocab" ? c.word : c.en); el.hidden = false; });
   $("#speakQ").addEventListener("click", () => { const c = cur(); if (c) speak(c.q); });
-  $("#speakA").addEventListener("click", () => { const c = cur(); if (c) speak(c.type === "pron" ? c.word + ". " + c.ex : c.en); });
+  const spokenText = c => c.type === "pron" ? c.word + ". " + c.ex : c.type === "vocab" ? c.word + ". " + plainEx(c.ex) : c.en;
+  $("#speakA").addEventListener("click", () => { const c = cur(); if (c) speak(spokenText(c)); });
   $("#pListen").addEventListener("click", () => { const c = cur(); if (c) speak(c.word + ". " + c.pair + ". " + c.word + "."); });
 
   let lastResult = null;
   function submitAnswer(said) {
     const c = cur(); if (!c || !$("#reveal").hidden) return;
     $("#answerZone").hidden = true; $("#reveal").hidden = false;
-    $("#rMineRow").querySelector(".lbl").textContent = c.type === "pron" ? "들린 말" : "내 답 (빨간 밑줄: 빠진 말, 취소선: 다른 말)";
+    $("#rMineRow").querySelector(".lbl").textContent = (c.type === "pron" || c.type === "vocab") ? "들린 말" : "내 답 (빨간 밑줄: 빠진 말, 취소선: 다른 말)";
     const v = $("#verdict"); v.textContent = "";
     const chip = (t, cls) => { const s = document.createElement("span"); s.className = "chip " + (cls || ""); s.textContent = t; v.append(s); };
     let sug;
@@ -924,6 +997,22 @@ function main(CARDS) {
       $("#rSaidRow").querySelector(".lbl").textContent = "왜 연습하나요";
       $("#rNote").textContent = c.tip; $("#rNote").hidden = false;
       $("#aiBox").hidden = true;
+    } else if (c.type === "vocab") {
+      const r = gradeVocab(c, said); sug = r.sug; lastResult = { said, sim: r.hit ? 1 : 0 };
+      if (!said) chip("정답 확인");
+      else {
+        chip(r.hit ? "‘" + c.word + "’ 맞았어요" : "다른 말로 들렸어요", r.hit ? "good" : "bad");
+        if (r.sim) chip("예문 일치 " + Math.round(r.sim * 100) + "%", r.sim >= 0.8 ? "good" : r.sim >= 0.6 ? "mid" : "bad");
+      }
+      const t = $("#rTarget"); t.textContent = c.word;
+      if (c.ipa) { const s = document.createElement("span"); s.className = "ipa"; s.textContent = c.ipa; t.append(s); }
+      $("#rAltsRow").hidden = true;
+      $("#rMineRow").hidden = !said; $("#rMine").textContent = said;
+      $("#rSaidRow").querySelector(".lbl").textContent = "예문"; $("#rSaidRow").hidden = false;
+      const rs = $("#rSaid"); rs.textContent = ""; renderBracket(rs, c.ex, false);
+      if (c.ex_ko) { rs.append(document.createElement("br")); const k = document.createElement("span"); k.className = "ko-ex"; k.textContent = c.ex_ko; rs.append(k); }
+      $("#rNote").textContent = c.note || ""; $("#rNote").hidden = !c.note;
+      $("#aiBox").hidden = true;
     } else {
       const r = said ? grade(c, said) : null; sug = r ? r.sug : 1; lastResult = { said, sim: r ? Math.round(r.best.sim * 100) / 100 : 0 };
       if (!said) chip("정답 확인");
@@ -936,8 +1025,13 @@ function main(CARDS) {
       const alts = c.alts || []; $("#rAltsRow").hidden = !alts.length; const ul = $("#rAlts"); ul.textContent = ""; alts.forEach(a => { const li = document.createElement("li"); li.textContent = a; ul.append(li); });
       const mine = $("#rMine"); mine.textContent = ""; $("#rMineRow").hidden = !said;
       if (r) for (const [op, w] of r.best.ops) { const s = document.createElement("span"); s.className = op === "ok" ? "" : op === "miss" ? "tok-miss" : "tok-extra"; s.textContent = w; mine.append(s, document.createTextNode(" ")); }
-      $("#rSaidRow").querySelector(".lbl").textContent = "수업 때 실제로 한 말";
-      $("#rSaidRow").hidden = !c.said; $("#rSaid").textContent = c.said ? "“" + c.said + "”" : "";
+      if (c.type === "struct") {
+        $("#rSaidRow").querySelector(".lbl").textContent = "구조"; $("#rSaidRow").hidden = false;
+        $("#rSaid").textContent = (c.frame || "") + (c.frame_ko ? " — " + c.frame_ko : "");
+      } else {
+        $("#rSaidRow").querySelector(".lbl").textContent = "수업 때 실제로 한 말";
+        $("#rSaidRow").hidden = !c.said; $("#rSaid").textContent = c.said ? "“" + c.said + "”" : "";
+      }
       $("#rNote").textContent = c.note || ""; $("#rNote").hidden = !c.note;
       $("#aiBox").hidden = !(CAP.ai && said);
     }
@@ -1036,15 +1130,15 @@ function main(CARDS) {
     chipRow($("#tagChips"), [["all", "모든 유형"], ...tags.map(t => [t, TAGS[t] || t])], LF.tag, v => { LF.tag = v; });
     const q = LF.q.toLowerCase();
     const rows = CARDS.filter(c => (LF.type === "all" || c.type === LF.type) && (LF.tag === "all" || c.tag === LF.tag) &&
-      (!q || [c.en, c.ko, c.said, c.word, c.pair, c.ex, c.q].some(x => x && x.toLowerCase().includes(q))));
+      (!q || [c.en, c.ko, c.said, c.word, c.pair, c.ex, c.ex_ko, c.frame, c.q].some(x => x && x.toLowerCase().includes(q))));
     $("#listCount").textContent = rows.length + "장";
     const ul = $("#list"); ul.textContent = "";
     for (const c of rows) {
       const li = document.createElement("li");
       const h = document.createElement("button"); h.type = "button"; h.className = "row-head"; h.setAttribute("aria-expanded", String(openId === c.id));
-      const en = document.createElement("span"); en.className = "en"; en.textContent = c.type === "pron" ? c.word + "  ·  " + c.ex : c.en;
+      const en = document.createElement("span"); en.className = "en"; en.textContent = c.type === "pron" ? c.word + "  ·  " + c.ex : c.type === "vocab" ? c.word : c.en;
       const [st, cls] = stateOf(c); const pill = document.createElement("span"); pill.className = "pill " + cls; pill.textContent = st;
-      const k = document.createElement("span"); k.className = "k"; k.textContent = c.type === "pron" ? "발음 · " + c.word + " / " + c.pair : c.ko;
+      const k = document.createElement("span"); k.className = "k"; k.textContent = c.type === "pron" ? "발음 · " + c.word + " / " + c.pair : c.type === "vocab" ? c.pos + " · " + c.ko : c.ko;
       h.append(en, pill, k);
       h.addEventListener("click", () => { openId = openId === c.id ? null : c.id; renderList(); });
       li.append(h);
@@ -1053,13 +1147,15 @@ function main(CARDS) {
         const add = (label, text, cls) => { if (!text) return; const p = document.createElement("div"); const l = document.createElement("span"); l.className = "hint"; l.textContent = label + " "; const t = document.createElement("span"); if (cls) t.className = cls; t.textContent = text; p.append(l, t); body.append(p); };
         if (c.type === "fix" || c.type === "lesson") add("수업", fmtDate(c.date) + (c.tutor ? " · " + c.tutor : "") + " · " + c.topic);
         if (c.type === "drill") add("패턴", c.group);
+        if (c.type === "struct") add("구조", (c.frame || "") + (c.frame_ko ? " — " + c.frame_ko : ""));
+        if (c.type === "vocab") { add("발음", c.ipa, "mono"); add("예문", plainEx(c.ex), "en"); add("예문 뜻", c.ex_ko); add("분류", c.group + (c.level ? " · " + c.level : "")); }
         add("질문", c.q, "en");
         add("수업 때 한 말", c.said ? "“" + c.said + "”" : "", "en");
         add("이렇게도", (c.alts || []).join(" / "), "en");
         add("메모", c.type === "pron" ? c.tip : c.note);
         const p = ST.prog[c.id]; if (p) add("기록", p.reps + "번 맞힘 · " + p.lapses + "번 틀림 · 다음 간격 " + fmtIvl(p));
         const acts = document.createElement("div"); acts.className = "acts";
-        if (canSpeak()) { const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = "듣기"; b.addEventListener("click", () => speak(c.type === "pron" ? c.word + ". " + c.ex : c.en)); acts.append(b); }
+        if (canSpeak()) { const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = "듣기"; b.addEventListener("click", () => speak(spokenText(c))); acts.append(b); }
         const pr = document.createElement("button"); pr.type = "button"; pr.className = "btn primary"; pr.textContent = "이 문장 연습"; pr.addEventListener("click", () => startSession({ ids: [c.id] })); acts.append(pr);
         const sus = document.createElement("button"); sus.type = "button"; sus.className = "btn"; const isS = !!(ST.prog[c.id] && ST.prog[c.id].susp);
         sus.textContent = isS ? "다시 포함하기" : "연습에서 빼기";
