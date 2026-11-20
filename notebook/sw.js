@@ -1,7 +1,7 @@
 /* Service worker for the installed 말하기 교정 노트 app.
    App files: network first (updates show up when online), cache fallback (works offline).
    Google Fonts: cache first. */
-const CACHE = "notebook-8ed685e6f8";
+const CACHE = "notebook-b1af9fc960";
 const SHELL = ["./", "./index.html", "./cards.bin", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 const SCOPE = new URL(self.registration.scope).pathname;
 

@@ -475,51 +475,87 @@ mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-r
     });
   }
 
+  /* Chrome's recognizer ends by itself after a short pause (Android ends even with continuous = true).
+     So one "listening" run = several recognizer sessions: when a session ends on its own we open the next one,
+     until the learner taps the mic again (stop), or nothing has been heard for SILENCE_MS, or MAX_MS passes.
+     Each session's text is handed over as one final piece when that session ends. */
+  const SILENCE_MS = 12000, MAX_MS = 120000;
   function makeDictation() {
     if (!SR) return null;
     const H = { partial: new Set(), final: new Set(), state: new Set() };
     const on = k => f => { H[k].add(f); return () => H[k].delete(f); };
     const emit = (k, v) => H[k].forEach(f => { try { f(v); } catch (e) {} });
-    let rec = null, state = "idle", stopWaiters = [];
+    let rec = null, state = "idle", stopWaiters = [], stopping = false, startedAt = 0, lastHeard = 0, emitted = false;
     const setState = (s, reason) => { state = s; emit("state", reason ? { state: s, reason } : { state: s }); };
+    const lower = s => s.toLowerCase();
+    function finish(reason) {
+      rec = null;
+      emit("partial", { text: "" });
+      setState("idle", reason);
+      stopWaiters.splice(0).forEach(f => f());
+    }
+    function openSession(resolve, reject) {
+      let r, err = null, finals = [], interim = "", opened = false;
+      try { r = new SR(); } catch (e) { if (reject) { setState("idle", "unavailable"); reject({ code: "unavailable", message: String(e) }); } else finish(emitted ? "timeout" : "upstream_error"); return; }
+      rec = r;
+      r.lang = "en-US"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      // Android may repeat earlier words inside later results ("I think" / "I think that's fine"): keep the longer one.
+      const sessionText = () => {
+        const merged = [];
+        for (const f of finals) { const last = merged[merged.length - 1]; if (last && lower(f).startsWith(lower(last))) merged[merged.length - 1] = f; else if (!(last && lower(last).endsWith(lower(f)))) merged.push(f); }
+        const fin = merged.join(" ");
+        if (!interim) return fin;
+        if (fin && lower(interim).startsWith(lower(fin))) return interim;
+        return (fin + " " + interim).trim();
+      };
+      r.onstart = () => {
+        opened = true;
+        if (resolve) { startedAt = lastHeard = Date.now(); setState("listening"); resolve(); }
+      };
+      r.onresult = e => {
+        finals = []; interim = "";
+        for (let i = 0; i < e.results.length; i++) {
+          const res = e.results[i], t = ((res[0] && res[0].transcript) || "").trim();
+          if (!t) continue;
+          if (res.isFinal) finals.push(t); else interim += (interim ? " " : "") + t;
+        }
+        lastHeard = Date.now();
+        emit("partial", { text: sessionText() });
+      };
+      r.onerror = e => { err = e.error; };
+      r.onend = () => {
+        const text = sessionText();
+        if (text) { emit("final", { text: (emitted ? " " : "") + text }); emitted = true; }
+        emit("partial", { text: "" });
+        if (resolve && !opened) {                       // never started listening
+          const code = stopping ? "stopped" : (err === "not-allowed" || err === "service-not-allowed") ? "not_granted" : err === "no-speech" ? "no_speech" : "upstream_error";
+          rec = null; setState("idle", code); stopWaiters.splice(0).forEach(f => f()); reject({ code, message: err || "ended" }); return;
+        }
+        if (stopping) return finish("stopped");
+        if (err === "not-allowed" || err === "service-not-allowed") return finish("not_granted");
+        if (err === "audio-capture" || err === "network") return finish("upstream_error");
+        const now = Date.now();
+        if (now - lastHeard > SILENCE_MS || now - startedAt > MAX_MS) return finish(emitted ? "timeout" : "no_speech");
+        openSession(null, null);                        // a pause, not the end: keep listening
+      };
+      try { r.start(); }
+      catch (e) {
+        if (resolve) { rec = null; setState("idle", "upstream_error"); reject({ code: "upstream_error", message: String(e) }); }
+        else finish(emitted ? "timeout" : "upstream_error");
+      }
+    }
     function start() {
-      if (rec) return Promise.resolve();
-      return new Promise((resolve, reject) => {
-        let started = false, err = null, stopping = false, said = "", r;
-        try { r = new SR(); } catch (e) { reject({ code: "unavailable", message: String(e) }); return; }
-        rec = r;
-        r.markStopping = () => { stopping = true; };
-        r.lang = "en-US"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
-        r.onstart = () => { started = true; setState("listening"); resolve(); };
-        r.onresult = e => {
-          let interim = "";
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            const res = e.results[i], t = ((res[0] && res[0].transcript) || "").trim();
-            if (!t) continue;
-            if (res.isFinal) { emit("final", { text: (said ? " " : "") + t }); said += (said ? " " : "") + t; }
-            else interim += (interim ? " " : "") + t;
-          }
-          emit("partial", { text: interim });
-        };
-        r.onerror = e => { err = e.error; };
-        r.onend = () => {
-          rec = null;
-          emit("partial", { text: "" });
-          const reason = (err === "not-allowed" || err === "service-not-allowed") ? "not_granted"
-            : err === "no-speech" ? "no_speech"
-            : (err === "network" || err === "audio-capture") ? "upstream_error"
-            : (err === "aborted" || stopping) ? "stopped" : "viewer_stopped";
-          setState("idle", reason);
-          stopWaiters.splice(0).forEach(f => f());
-          if (!started) reject({ code: reason === "viewer_stopped" ? "upstream_error" : reason, message: err || "ended" });
-        };
-        setState("starting");
-        try { r.start(); } catch (e) { rec = null; setState("idle", "upstream_error"); reject({ code: "upstream_error", message: String(e) }); }
-      });
+      if (state !== "idle") return Promise.resolve();
+      stopping = false; emitted = false;
+      return new Promise((resolve, reject) => { setState("starting"); openSession(resolve, reject); });
     }
     function stop() {
-      if (!rec) return Promise.resolve();
-      return new Promise(res => { stopWaiters.push(res); try { rec.markStopping(); rec.stop(); } catch (e) { res(); } });
+      if (state === "idle") return Promise.resolve();
+      stopping = true;
+      return new Promise(res => {
+        stopWaiters.push(res);
+        try { if (rec) rec.stop(); else finish("stopped"); } catch (e) { finish("stopped"); }
+      });
     }
     return { start, stop, active: () => state !== "idle", onPartial: on("partial"), onFinal: on("final"), onState: on("state") };
   }
@@ -736,17 +772,23 @@ function main(CARDS) {
     CAP.dict = d || null;
     if (d) {
       d.onPartial(({ text }) => { partial = text || ""; renderLive(); });
-      d.onFinal(({ text }) => { speakBuf = (speakBuf ? speakBuf + text : (text || "").replace(/^\s+/, "")); partial = ""; renderLive(); });
+      d.onFinal(({ text }) => { text = text || ""; speakBuf = speakBuf ? speakBuf + (/^\s/.test(text) ? "" : " ") + text : text.replace(/^\s+/, ""); partial = ""; renderLive(); });
       d.onState(({ state, reason }) => {
         const on = state !== "idle";
         const mic = $("#micBtn"); mic.setAttribute("aria-pressed", String(state === "listening" || state === "starting"));
-        $("#micLabel").textContent = state === "starting" ? "준비 중…" : state === "listening" ? "듣는 중 · 다 말했으면 누르기" : state === "finishing" ? "정리 중…" : "눌러서 말하기";
+        $("#micLabel").textContent = state === "starting" ? "준비 중…" : state === "listening" ? "듣는 중 · 다 말하면 눌러서 끝내기" : state === "finishing" ? "정리 중…" : "눌러서 말하기";
         if (!on) {
           if (reason === "unavailable") { CAP.dict = null; renderCaps(); renderMicAvail(); }
           if (reason === "not_granted") { CAP.dict = null; renderCaps(); renderMicAvail(); showNotice("마이크 사용이 꺼져 있어요. 입력칸에 타이핑해서 답할 수 있어요."); }
           if (reason === "no_speech") showNotice("말소리가 들리지 않았어요. 마이크를 다시 누르고 말해 보세요.");
           if (reason === "upstream_error" && PLAT.kind === "web") showNotice("음성 인식에 실패했어요. 음성 인식은 인터넷 연결이 필요해요.");
           if ((reason === "stopped" || reason === "viewer_stopped") && checkPending && speakBuf.trim()) { checkPending = false; submitAnswer(speakBuf.trim()); }
+          else if (speakBuf.trim() && $("#reveal").hidden && view === "study") {
+            // listening ended without the learner finishing (long silence, view hidden, time limit): keep the words for editing, don't grade yet
+            const wasPending = checkPending; checkPending = false;
+            $("#typeInput").value = speakBuf.trim(); speakBuf = ""; partial = ""; renderLive();
+            if (wasPending) showNotice((reason === "timeout" ? "말이 한동안 없어서 듣기를 멈췄어요. " : "듣기가 멈췄어요. ") + "입력칸의 내용을 고쳐서 ‘확인’을 누르거나, 마이크를 눌러 이어서 말하세요.");
+          }
         }
       });
     }
@@ -959,7 +1001,7 @@ function main(CARDS) {
   $("#micBtn").addEventListener("click", () => {
     const d = CAP.dict; if (!d) { $("#typeInput").focus(); return; }
     if (d.active()) { checkPending = true; d.stop().then(() => { if (checkPending && speakBuf.trim()) { checkPending = false; submitAnswer(speakBuf.trim()); } }).catch(() => {}); return; }
-    speakBuf = ""; partial = ""; renderLive(); checkPending = true;
+    speakBuf = $("#typeInput").value.trim(); $("#typeInput").value = ""; partial = ""; renderLive(); checkPending = true; hideNotice();
     d.start({ language: "en" }).catch(e => {
       checkPending = false;
       const code = e && e.code;
